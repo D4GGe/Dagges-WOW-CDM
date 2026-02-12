@@ -17,7 +17,7 @@ local DEFAULTS = {
     totemCount = 4,
     showSecondaryBuffs = true,
     secondaryBuffCount = 10,
-    hideBackground = false,
+    hideBackground = true,
     primaryIconSize = 38,
     primaryIconPad  = 3,
     secondaryIconSize = 38,
@@ -34,6 +34,34 @@ local DEFAULTS = {
     secondaryY = -150,
     hideBlizzardCDM = true,
 }
+
+-- ── Profile Management ───────────────────────────────────────────────
+local function GetCharKey()
+    return (UnitFullName("player") or "Unknown") .. " - " .. (GetRealmName() or "Unknown")
+end
+
+local function GetCurrentProfile()
+    if not DaggesAddonDB then return DEFAULTS end
+    if not DaggesAddonDB.profiles then return DEFAULTS end
+    
+    local charKey = GetCharKey()
+    local pName = (DaggesAddonDB.charProfiles and DaggesAddonDB.charProfiles[charKey]) or "Default"
+    
+    if not DaggesAddonDB.profiles[pName] then
+        pName = "Default"
+    end
+    
+    if not DaggesAddonDB.profiles[pName] then
+        DaggesAddonDB.profiles["Default"] = CopyTable(DEFAULTS)
+        pName = "Default"
+    end
+    
+    return DaggesAddonDB.profiles[pName]
+end
+
+local SetProfile, CopyProfile, DeleteProfile, CopyFromProfile
+
+
 
 -- Sample icons for config preview (common WoW spell icon IDs)
 local SAMPLE_ICONS = {
@@ -69,9 +97,9 @@ local BACKDROP_CONFIG = {
     insets   = { left = 4, right = 4, top = 4, bottom = 4 },
 }
 
-local function UpdateFrameStyles()
-    local configOpen = _G["DaggesConfigFrame"] and _G["DaggesConfigFrame"]:IsShown()
-    local db = DaggesAddonDB or DEFAULTS
+local function UpdateFrameStyles(forceClosed)
+    local configOpen = not forceClosed and _G["DaggesConfigFrame"] and _G["DaggesConfigFrame"]:IsShown()
+    local db = GetCurrentProfile()
     local hide = db.hideBackground and not configOpen -- Force show if config is open
     
     local targetFrames = { 
@@ -142,15 +170,17 @@ frame.title = titleText
 
 -- Drag
 frame:SetScript("OnDragStart", function(self)
-    if not DaggesAddonDB.locked then self:StartMoving() end
+    local db = GetCurrentProfile()
+    if not db.locked then self:StartMoving() end
 end)
 frame:SetScript("OnDragStop", function(self)
     self:StopMovingOrSizing()
     local p, _, rp, px, py = self:GetPoint()
-    DaggesAddonDB.point    = p
-    DaggesAddonDB.relPoint = rp
-    DaggesAddonDB.x        = px
-    DaggesAddonDB.y        = py
+    local db = GetCurrentProfile()
+    db.point    = p
+    db.relPoint = rp
+    db.x        = px
+    db.y        = py
 end)
 
 -- ── Icon Pool ────────────────────────────────────────────────────────
@@ -160,7 +190,8 @@ local function GetIcon(index)
     if icons[index] then return icons[index] end
 
     local btn = CreateFrame("Frame", nil, frame)
-    local size = (DaggesAddonDB and DaggesAddonDB.primaryIconSize) or DEFAULTS.primaryIconSize or ICON_SIZE
+    local db = GetCurrentProfile()
+    local size = (db and db.primaryIconSize) or DEFAULTS.primaryIconSize or ICON_SIZE
     btn:SetSize(size, size)
 
     -- Background
@@ -281,22 +312,25 @@ secondaryFrame.title = secondaryTitle
 
 -- Drag (Secondary)
 secondaryFrame:SetScript("OnDragStart", function(self)
-    if not DaggesAddonDB.locked then self:StartMoving() end
+    local db = GetCurrentProfile()
+    if not db.locked then self:StartMoving() end
 end)
 secondaryFrame:SetScript("OnDragStop", function(self)
     self:StopMovingOrSizing()
     local p, _, rp, px, py = self:GetPoint()
-    DaggesAddonDB.secondaryPoint    = p
-    DaggesAddonDB.secondaryRelPoint = rp
-    DaggesAddonDB.secondaryX        = px
-    DaggesAddonDB.secondaryY        = py
+    local db = GetCurrentProfile()
+    db.secondaryPoint    = p
+    db.secondaryRelPoint = rp
+    db.secondaryX        = px
+    db.secondaryY        = py
 end)
 
 local secondaryIcons = {}
 
 local function CreateSecondaryIcon(index)
     local btn = CreateFrame("Frame", nil, secondaryFrame)
-    local size = (DaggesAddonDB and DaggesAddonDB.secondaryIconSize) or DEFAULTS.secondaryIconSize or ICON_SIZE
+    local db = GetCurrentProfile()
+    local size = (db and db.secondaryIconSize) or DEFAULTS.secondaryIconSize or ICON_SIZE
     btn:SetSize(size, size)
     
     local bg = btn:CreateTexture(nil, "BACKGROUND")
@@ -424,15 +458,16 @@ totemFrame.title = tfTitle
 
 -- Drag (Totem)
 totemFrame:SetScript("OnDragStart", function(self)
-    if not DaggesAddonDB.locked then self:StartMoving() end
+    if not GetCurrentProfile().locked then self:StartMoving() end
 end)
 totemFrame:SetScript("OnDragStop", function(self)
     self:StopMovingOrSizing()
     local p, _, rp, px, py = self:GetPoint()
-    DaggesAddonDB.totemPoint    = p
-    DaggesAddonDB.totemRelPoint = rp
-    DaggesAddonDB.totemX        = px
-    DaggesAddonDB.totemY        = py
+    local db = GetCurrentProfile()
+    db.totemPoint    = p
+    db.totemRelPoint = rp
+    db.totemX        = px
+    db.totemY        = py
 end)
 
 local totemIcons = {}
@@ -441,7 +476,8 @@ local function GetTotemIcon(index)
     if totemIcons[index] then return totemIcons[index] end
     
     local btn = CreateFrame("Frame", nil, totemFrame)
-    local size = (DaggesAddonDB and DaggesAddonDB.totemIconSize) or DEFAULTS.totemIconSize or ICON_SIZE
+    local db = GetCurrentProfile()
+    local size = (db and db.totemIconSize) or DEFAULTS.totemIconSize or ICON_SIZE
     btn:SetSize(size, size)
     
     -- Background
@@ -493,10 +529,11 @@ for i=1,4 do GetTotemIcon(i) end
 
 -- ── Resize all icons when size/spacing changes ──────────────────────
 local function ResizeAllIcons()
-    local pSize = DaggesAddonDB.primaryIconSize or DEFAULTS.primaryIconSize
-    local sSize = DaggesAddonDB.secondaryIconSize or DEFAULTS.secondaryIconSize
-    local tSize = DaggesAddonDB.totemIconSize or DEFAULTS.totemIconSize
-    local tPad  = DaggesAddonDB.totemIconPad or DEFAULTS.totemIconPad
+    local db = GetCurrentProfile()
+    local pSize = db.primaryIconSize or DEFAULTS.primaryIconSize
+    local sSize = db.secondaryIconSize or DEFAULTS.secondaryIconSize
+    local tSize = db.totemIconSize or DEFAULTS.totemIconSize
+    local tPad  = db.totemIconPad or DEFAULTS.totemIconPad
     -- Resize primary icons
     for _, btn in ipairs(icons) do
         btn:SetSize(pSize, pSize)
@@ -520,13 +557,14 @@ local function ResizeAllIcons()
             -(HEADER_H + FRAME_PAD))
     end
     -- Update totem frame size
-    local maxTotems = DaggesAddonDB.totemCount or 4
+    local maxTotems = db.totemCount or 4
     totemFrame:SetSize(maxTotems * (tSize + tPad) + FRAME_PAD*2 - tPad, tSize + FRAME_PAD*2 + HEADER_H)
 end
 
-local function UpdateTotemBar()
+local function UpdateTotemBar(forceClosed)
     local activeCount = 0
-    local maxTotems = DaggesAddonDB.totemCount or 4
+    local db = GetCurrentProfile()
+    local maxTotems = db.totemCount or 4
     
     for i = 1, 4 do
         -- Respect user setting for max totems displayed
@@ -552,7 +590,7 @@ local function UpdateTotemBar()
         end
     end
     
-    local configOpen = _G["DaggesConfigFrame"] and _G["DaggesConfigFrame"]:IsShown()
+    local configOpen = not forceClosed and _G["DaggesConfigFrame"] and _G["DaggesConfigFrame"]:IsShown()
 
     -- Show sample totem icons when config is open and slots are empty
     if configOpen then
@@ -570,7 +608,7 @@ local function UpdateTotemBar()
     end
 
     if activeCount > 0 or configOpen then
-        if DaggesAddonDB.showTotems then
+        if db.showTotems then
              totemFrame:Show()
         else
              totemFrame:Hide()
@@ -584,10 +622,11 @@ end
 
 
 -- ── Refresh: read from BuffIconCooldownViewer ────────────────────────
-local function RefreshBuffs()
+local function RefreshBuffs(forceClosed)
     -- Visibility toggle
-    local configOpen = _G["DaggesConfigFrame"] and _G["DaggesConfigFrame"]:IsShown()
-    if not DaggesAddonDB.showBuffs and not DaggesAddonDB.showSecondaryBuffs then
+    local db = GetCurrentProfile()
+    local configOpen = not forceClosed and _G["DaggesConfigFrame"] and _G["DaggesConfigFrame"]:IsShown()
+    if not db.showBuffs and not db.showSecondaryBuffs then
         frame:Hide()
         secondaryFrame:Hide()
         return
@@ -597,7 +636,7 @@ local function RefreshBuffs()
     local trackedIDs = {} -- Store what we track in the primary list
     if not viewer then return end
 
-    local maxBuffs = DaggesAddonDB.buffCount or DEFAULTS.buffCount
+    local maxBuffs = db.buffCount or DEFAULTS.buffCount
     local now = GetTime()
     local idx = 0
 
@@ -615,8 +654,8 @@ local function RefreshBuffs()
     -- Show ALL tracked buffs — split between primary and secondary
     local primaryIdx = 0
     local secondaryIdx = 0
-    local maxPrimary = DaggesAddonDB.buffCount or DEFAULTS.buffCount
-    local maxSecondary = DaggesAddonDB.secondaryBuffCount or 10
+    local maxPrimary = db.buffCount or DEFAULTS.buffCount
+    local maxSecondary = db.secondaryBuffCount or 10
 
     for i, child in ipairs(itemFrames) do
         if child.Icon then
@@ -818,7 +857,7 @@ local function RefreshBuffs()
     local configOpen = _G["DaggesConfigFrame"] and _G["DaggesConfigFrame"]:IsShown()
     if configOpen then
         -- Fill remaining primary slots with samples
-        local maxPrimarySample = DaggesAddonDB.buffCount or DEFAULTS.buffCount
+        local maxPrimarySample = db.buffCount or DEFAULTS.buffCount
         for j = primaryIdx + 1, maxPrimarySample do
             local btn = GetIcon(j)
             btn.sourceFrame = nil
@@ -833,7 +872,7 @@ local function RefreshBuffs()
         if maxPrimarySample > primaryIdx then primaryIdx = maxPrimarySample end
 
         -- Fill remaining secondary slots with samples
-        local maxSecondarySample = DaggesAddonDB.secondaryBuffCount or DEFAULTS.secondaryBuffCount
+        local maxSecondarySample = db.secondaryBuffCount or DEFAULTS.secondaryBuffCount
         for j = secondaryIdx + 1, maxSecondarySample do
             local btn = GetSecondaryIcon(j)
             btn.sourceFrame = nil
@@ -850,8 +889,8 @@ local function RefreshBuffs()
     
     -- Primary Frame: Left-aligned as before
     if primaryIdx > 0 or configOpen then
-        local pSize = DaggesAddonDB.primaryIconSize or DEFAULTS.primaryIconSize
-        local pPad  = DaggesAddonDB.primaryIconPad or DEFAULTS.primaryIconPad
+        local pSize = db.primaryIconSize or DEFAULTS.primaryIconSize
+        local pPad  = db.primaryIconPad or DEFAULTS.primaryIconPad
         local w = FRAME_PAD * 2 + primaryIdx * (pSize + pPad) - pPad
         local h = HEADER_H + FRAME_PAD * 2 + pSize
         frame:SetSize(math.max(w, 60), h)
@@ -869,9 +908,9 @@ local function RefreshBuffs()
     end
 
     -- Secondary Frame: Centered growth
-    if (secondaryIdx > 0 or configOpen) and DaggesAddonDB.showSecondaryBuffs then
-        local sSize = DaggesAddonDB.secondaryIconSize or DEFAULTS.secondaryIconSize
-        local sPad  = DaggesAddonDB.secondaryIconPad or DEFAULTS.secondaryIconPad
+    if (secondaryIdx > 0 or configOpen) and db.showSecondaryBuffs then
+        local sSize = db.secondaryIconSize or DEFAULTS.secondaryIconSize
+        local sPad  = db.secondaryIconPad or DEFAULTS.secondaryIconPad
         local w = FRAME_PAD * 2 + secondaryIdx * (sSize + sPad) - sPad
         -- If config is open but no icons, show a minimum width
         local frameW = math.max(w, 60)
@@ -961,11 +1000,11 @@ local function HookViewer()
     RefreshBuffs()
 
     -- Hide Blizzard CDM if requested
-    if DaggesAddonDB.hideBlizzardCDM then
+    if GetCurrentProfile().hideBlizzardCDM then
         if viewer.SetAlpha then viewer:SetAlpha(0) end
         -- Avoid Hide() as it may stop OnUpdate or visibility events
         viewer:HookScript("OnShow", function(self)
-            if DaggesAddonDB.hideBlizzardCDM and self.SetAlpha then self:SetAlpha(0) end
+            if GetCurrentProfile().hideBlizzardCDM and self.SetAlpha then self:SetAlpha(0) end
         end)
     end
 end
@@ -990,48 +1029,65 @@ frame:RegisterEvent("PLAYER_TOTEM_UPDATE")
 
 frame:SetScript("OnEvent", function(self, event, arg1, ...)
     if event == "PLAYER_LOGIN" then
-        -- Init saved vars
-        if not DaggesAddonDB then DaggesAddonDB = {} end
-        for k, v in pairs(DEFAULTS) do
-            if DaggesAddonDB[k] == nil then
-                DaggesAddonDB[k] = v
-            end
+        -- Init saved vars (PROFILE SYSTEM)
+        if not DaggesAddonDB then 
+            DaggesAddonDB = { profiles = {}, charProfiles = {} }
         end
         
+        -- Migration/Cleanup
+        if not DaggesAddonDB.profiles then
+            DaggesAddonDB.profiles = {}
+        end
+        if not DaggesAddonDB.charProfiles then
+            DaggesAddonDB.charProfiles = {}
+        end
+        
+        if not DaggesAddonDB.profiles["Default"] then
+            DaggesAddonDB.profiles["Default"] = CopyTable(DEFAULTS)
+        end
+        
+        -- Set current character to Default if not set
+        local charKey = GetCharKey()
+        if not DaggesAddonDB.charProfiles[charKey] then
+            DaggesAddonDB.charProfiles[charKey] = "Default"
+        end
+
         ResizeAllIcons()
         UpdateFrameStyles()
+
+        local db = GetCurrentProfile()
 
         -- Restore position (Main Frame)
         frame:ClearAllPoints()
         frame:SetPoint(
-            DaggesAddonDB.point    or "CENTER",
+            db.point    or "CENTER",
             UIParent,
-            DaggesAddonDB.relPoint or "CENTER",
-            DaggesAddonDB.x        or 0,
-            DaggesAddonDB.y        or 0
+            db.relPoint or "CENTER",
+            db.x        or 0,
+            db.y        or 0
         )
         
         -- Restore position (Totem Frame)
         totemFrame:ClearAllPoints()
         totemFrame:SetPoint(
-            DaggesAddonDB.totemPoint    or "CENTER",
+            db.totemPoint    or "CENTER",
             UIParent,
-            DaggesAddonDB.totemRelPoint or "CENTER",
-            DaggesAddonDB.totemX        or 0,
-            DaggesAddonDB.totemY        or -100
+            db.totemRelPoint or "CENTER",
+            db.totemX        or 0,
+            db.totemY        or -100
         )
 
         -- Restore position (Secondary Frame)
         secondaryFrame:ClearAllPoints()
         secondaryFrame:SetPoint(
-            DaggesAddonDB.secondaryPoint or "CENTER",
+            db.secondaryPoint or "CENTER",
             UIParent,
-            DaggesAddonDB.secondaryRelPoint or "CENTER",
-            DaggesAddonDB.secondaryX or 0,
-            DaggesAddonDB.secondaryY or -150
+            db.secondaryRelPoint or "CENTER",
+            db.secondaryX or 0,
+            db.secondaryY or -150
         )
 
-        if DaggesAddonDB.showBuffs then
+        if db.showBuffs then
             frame:Show()
             RefreshBuffs()
         else
@@ -1054,25 +1110,26 @@ frame:SetScript("OnEvent", function(self, event, arg1, ...)
         C_Timer.After(0.5, HookViewer)
 
     elseif event == "PLAYER_LOGOUT" then
+        local db = GetCurrentProfile()
         local p, _, rp, px, py = frame:GetPoint()
-        DaggesAddonDB.point    = p
-        DaggesAddonDB.relPoint = rp
-        DaggesAddonDB.x        = px
-        DaggesAddonDB.y        = py
+        db.point    = p
+        db.relPoint = rp
+        db.x        = px
+        db.y        = py
         
         local tp, _, trp, tpx, tpy = totemFrame:GetPoint()
-        DaggesAddonDB.totemPoint    = tp
-        DaggesAddonDB.totemRelPoint = trp
-        DaggesAddonDB.totemX        = tpx
-        DaggesAddonDB.totemY        = tpy
+        db.totemPoint    = tp
+        db.totemRelPoint = trp
+        db.totemX        = tpx
+        db.totemY        = tpy
 
         local sp, _, srp, spx, spy = secondaryFrame:GetPoint()
-        DaggesAddonDB.secondaryPoint    = sp
-        DaggesAddonDB.secondaryRelPoint = srp
-        DaggesAddonDB.secondaryX        = spx
-        DaggesAddonDB.secondaryY        = spy
+        db.secondaryPoint    = sp
+        db.secondaryRelPoint = srp
+        db.secondaryX        = spx
+        db.secondaryY        = spy
 
-        DaggesAddonDB.visible = frame:IsShown()
+        db.visible = frame:IsShown()
         
     elseif event == "PLAYER_TOTEM_UPDATE" then
         UpdateTotemBar()
@@ -1176,7 +1233,7 @@ local function CreateConfigFrame()
     if configFrame then return end
     
     local f = CreateFrame("Frame", "DaggesConfigFrame", UIParent, "BackdropTemplate")
-    f:SetSize(300, 250)
+    f:SetSize(300, 320)
     f:SetPoint("CENTER")
     f:SetFrameStrata("HIGH")
     f:EnableMouse(true)
@@ -1201,13 +1258,6 @@ local function CreateConfigFrame()
     local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
     close:SetPoint("TOPRIGHT", -8, -8)
 
-    f:SetScript("OnHide", function()
-
-        UpdateFrameStyles()
-        RefreshBuffs()
-        UpdateTotemBar()
-    end)
-
     -- ── Helper: Section Header ──
     local function MakeHeader(text, yOffset)
         local h = f:CreateFontString(nil, "ARTWORK", "GameFontNormal")
@@ -1222,11 +1272,12 @@ local function CreateConfigFrame()
         local cb = CreateFrame("CheckButton", name, f, "UICheckButtonTemplate")
         cb:SetPoint("TOPLEFT", xOffset, yOffset)
         _G[cb:GetName() .. "Text"]:SetText(label)
-        local val = DaggesAddonDB[dbKey]
+        local db = GetCurrentProfile()
+        local val = db[dbKey]
         if val == nil then val = defaultVal end
         cb:SetChecked(val)
         cb:SetScript("OnClick", function(self)
-            DaggesAddonDB[dbKey] = self:GetChecked()
+            GetCurrentProfile()[dbKey] = self:GetChecked()
             if callback then callback() end
         end)
         return cb
@@ -1242,18 +1293,154 @@ local function CreateConfigFrame()
         sl:SetObeyStepOnDrag(true)
         _G[sl:GetName() .. "Low"]:SetText(tostring(min))
         _G[sl:GetName() .. "High"]:SetText(tostring(max))
-        _G[sl:GetName() .. "Text"]:SetText(label .. ": " .. (DaggesAddonDB[dbKey] or defaultVal))
+        local db = GetCurrentProfile()
+        _G[sl:GetName() .. "Text"]:SetText(label .. ": " .. (db[dbKey] or defaultVal))
         sl:SetScript("OnValueChanged", function(self, value)
             local val = math.floor(value + 0.5)
-            DaggesAddonDB[dbKey] = val
+            GetCurrentProfile()[dbKey] = val
             _G[self:GetName() .. "Text"]:SetText(label .. ": " .. val)
             if callback then callback() end
         end)
-        sl:SetValue(DaggesAddonDB[dbKey] or defaultVal)
+        sl:SetValue(db[dbKey] or defaultVal)
         return sl
     end
 
     local y = -50  -- starting Y below title
+
+    -- ════════════════════════════════════════════════════════════════
+    -- DROPDOWN / PROFILE UI
+    -- ════════════════════════════════════════════════════════════════
+    local profileLabel = f:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    profileLabel:SetPoint("TOPLEFT", 24, y)
+    profileLabel:SetText("Profile:")
+    
+    local ddown = CreateFrame("Frame", "DaggesProfileDropdown", f, "UIDropDownMenuTemplate")
+    ddown:SetPoint("TOPLEFT", 70, y + 2)
+    UIDropDownMenu_SetWidth(ddown, 120)
+    
+    -- Function to refresh the dropdown text
+    local function UpdateDropdownText()
+        local charKey = GetCharKey()
+        local pName = DaggesAddonDB.charProfiles[charKey] or "Default"
+        UIDropDownMenu_SetText(ddown, pName)
+    end
+    
+    UIDropDownMenu_Initialize(ddown, function(self, level, menuList)
+        local info = UIDropDownMenu_CreateInfo()
+        local charKey = GetCharKey()
+        local currentCharProfile = DaggesAddonDB.charProfiles[charKey] or "Default"
+        
+        -- Sort names: Default first, then alphabetical
+        local names = {}
+        for name in pairs(DaggesAddonDB.profiles) do
+            table.insert(names, name)
+        end
+        table.sort(names, function(a, b)
+            if a == "Default" then return true end
+            if b == "Default" then return false end
+            return a < b
+        end)
+        
+        for _, name in ipairs(names) do
+            info.text = name
+            info.checked = (name == currentCharProfile)
+            info.func = function(self)
+                SetProfile(self:GetText())
+                UpdateDropdownText()
+            end
+            UIDropDownMenu_AddButton(info)
+        end
+    end)
+    UpdateDropdownText()
+    
+    -- Copy From Dropdown
+    y = y - 30
+    local copyLabel = f:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    copyLabel:SetPoint("TOPLEFT", 24, y)
+    copyLabel:SetText("Copy From:")
+    
+    local copyDown = CreateFrame("Frame", "DaggesCopyFromDropdown", f, "UIDropDownMenuTemplate")
+    copyDown:SetPoint("TOPLEFT", 70, y + 2)
+    UIDropDownMenu_SetWidth(copyDown, 120)
+    UIDropDownMenu_SetText(copyDown, "Select Source...")
+    
+    UIDropDownMenu_Initialize(copyDown, function(self, level, menuList)
+        local info = UIDropDownMenu_CreateInfo()
+        local names = {}
+        for name in pairs(DaggesAddonDB.profiles) do
+            table.insert(names, name)
+        end
+        table.sort(names, function(a, b)
+            if a == "Default" then return true end
+            if b == "Default" then return false end
+            return a < b
+        end)
+        
+        for _, name in ipairs(names) do
+            info.text = name
+            info.checked = false
+            info.func = function(self)
+                local targetName = self:GetText()
+                StaticPopupDialogs["DAGGES_COPY_CONFIRM"] = {
+                    text = "Are you sure you want to overwrite your current profile with settings from '" .. targetName .. "'?",
+                    button1 = "Yes",
+                    button2 = "No",
+                    OnAccept = function()
+                        CopyFromProfile(targetName)
+                        print("|cff8878cc[Buff Tracker]|r Settings copied from " .. targetName)
+                    end,
+                    timeout = 0,
+                    whileDead = true,
+                    hideOnEscape = true,
+                }
+                StaticPopup_Show("DAGGES_COPY_CONFIRM")
+                UIDropDownMenu_SetText(copyDown, "Select Source...")
+            end
+            UIDropDownMenu_AddButton(info)
+        end
+    end)
+    
+    -- New Profile
+    local newBtn = CreateFrame("Button", nil, f, "GameMenuButtonTemplate")
+    newBtn:SetSize(20, 20)
+    newBtn:SetPoint("LEFT", ddown, "RIGHT", -10, 2)
+    newBtn:SetText("+")
+    newBtn:SetScript("OnClick", function()
+        StaticPopupDialogs["DAGGES_NEW_PROFILE"] = {
+            text = "Enter new profile name:",
+            button1 = "Create",
+            button2 = "Cancel",
+            hasEditBox = true,
+            OnAccept = function(self)
+                local text = self.EditBox:GetText()
+                CopyProfile(text)
+                UpdateDropdownText()
+            end,
+            timeout = 0,
+            whileDead = true,
+            hideOnEscape = true,
+            preferredIndex = 3,
+        }
+        StaticPopup_Show("DAGGES_NEW_PROFILE")
+    end)
+    
+    -- Delete Profile
+    local delBtn = CreateFrame("Button", nil, f, "GameMenuButtonTemplate")
+    delBtn:SetSize(20, 20)
+    delBtn:SetPoint("LEFT", newBtn, "RIGHT", 5, 0)
+    delBtn:SetText("-")
+    delBtn:SetScript("OnClick", function()
+        local charKey = GetCharKey()
+        local pName = DaggesAddonDB.charProfiles[charKey] or "Default"
+        if pName == "Default" then
+            print("Cannot delete Default profile.")
+            return
+        end
+        DeleteProfile(pName)
+        UpdateDropdownText()
+    end)
+
+    y = y - 40
 
     -- ════════════════════════════════════════════════════════════════
     -- GENERAL
@@ -1261,7 +1448,7 @@ local function CreateConfigFrame()
     MakeHeader("-- General --", y)
     y = y - 20
     MakeCheck("DaggesLockCheck", "Lock Frames", y, 20, "locked", false, function()
-        if DaggesAddonDB.locked then
+        if GetCurrentProfile().locked then
             print("|cff8878cc[Buff Tracker]|r Frames Locked.")
         else
             print("|cff8878cc[Buff Tracker]|r Frames Unlocked.")
@@ -1270,9 +1457,9 @@ local function CreateConfigFrame()
     MakeCheck("DaggesHideBGCheck", "Hide Background", y, 160, "hideBackground", false, UpdateFrameStyles)
     y = y - 30
     MakeCheck("DaggesHideCDMCheck", "Hide Blizzard CDM", y, 20, "hideBlizzardCDM", true, function()
-        local viewer = _G.BuffIconCooldownViewer
         if viewer then
-            if DaggesAddonDB.hideBlizzardCDM then
+            local db = GetCurrentProfile()
+            if db.hideBlizzardCDM then
                 if viewer.SetAlpha then viewer:SetAlpha(0) end
             else
                 if viewer.SetAlpha then viewer:SetAlpha(1) end
@@ -1343,12 +1530,102 @@ local function CreateConfigFrame()
     end)
     f:HookScript("OnHide", function()
         if secondaryFrame.centerLine then secondaryFrame.centerLine:Hide() end
-        UpdateFrameStyles() UpdateTotemBar() RefreshBuffs()
+        -- Force update styles with 'forceClosed' flag to avoid race conditions
+        UpdateFrameStyles(true) 
+        UpdateTotemBar(true) 
+        RefreshBuffs(true)
     end)
     
     f:Hide()
 end
 
+
+-- ── Profile Management (Defined late for dependencies) ───────────────
+
+
+SetProfile = function(name)
+    if not name or name == "" then return end
+    if not DaggesAddonDB.profiles[name] then
+        DaggesAddonDB.profiles[name] = CopyTable(DEFAULTS)
+    end
+    
+    local charKey = GetCharKey()
+    DaggesAddonDB.charProfiles[charKey] = name
+    
+    local db = GetCurrentProfile()
+    UpdateFrameStyles()
+    ResizeAllIcons()
+    RefreshBuffs()
+    UpdateTotemBar()
+    
+    frame:ClearAllPoints()
+    frame:SetPoint(db.point or "CENTER", UIParent, db.relPoint or "CENTER", db.x or 0, db.y or 0)
+    
+    local tf = _G["DaggesTotemFrame"]
+    if tf then
+        tf:ClearAllPoints()
+        tf:SetPoint(db.totemPoint or "CENTER", UIParent, db.totemRelPoint or "CENTER", db.totemX or 0, db.totemY or -100)
+    end
+    
+    local sf = _G["DaggesSecondaryTrackerFrame"]
+    if sf then
+        sf:ClearAllPoints()
+        sf:SetPoint(db.secondaryPoint or "CENTER", UIParent, db.secondaryRelPoint or "CENTER", db.secondaryX or 0, db.secondaryY or -150)
+    end
+
+    if DaggesConfigFrame and DaggesConfigFrame:IsShown() then
+        DaggesConfigFrame:Hide()
+        DaggesConfigFrame:Show()
+    end
+end
+
+CopyFromProfile = function(sourceName)
+    if not sourceName or sourceName == "" then return end
+    local source = DaggesAddonDB.profiles[sourceName]
+    if not source then return end
+    
+    local charKey = GetCharKey()
+    local currentProfileName = DaggesAddonDB.charProfiles[charKey] or "Default"
+    
+    -- Overwrite current profile settings with source's settings
+    -- We can't just overwrite the table reference because it's shared
+    -- or because we might lose the reference. Overwriting the structure is safest.
+    DaggesAddonDB.profiles[currentProfileName] = CopyTable(source)
+    
+    -- Refresh UI to reflect the new settings
+    SetProfile(currentProfileName)
+end
+
+CopyProfile = function(name)
+    if not name or name == "" then return end
+    local current = GetCurrentProfile()
+    DaggesAddonDB.profiles[name] = CopyTable(current)
+    SetProfile(name)
+end
+
+DeleteProfile = function(name)
+    if not name or name == "Default" then return end
+    
+    -- If any character uses this profile, switch them to Default
+    for ck, pn in pairs(DaggesAddonDB.charProfiles or {}) do
+        if pn == name then
+            DaggesAddonDB.charProfiles[ck] = "Default"
+        end
+    end
+    
+    DaggesAddonDB.profiles[name] = nil
+    
+    -- Refresh UI if we just deleted the profile we were on
+    local charKey = GetCharKey()
+    if not DaggesAddonDB.profiles[DaggesAddonDB.charProfiles[charKey]] then
+        SetProfile("Default")
+    end
+
+    if DaggesConfigFrame and DaggesConfigFrame:IsShown() then
+        DaggesConfigFrame:Hide()
+        DaggesConfigFrame:Show()
+    end
+end
 
 -- ── Slash Commands ───────────────────────────────────────────────────
 SLASH_DAGGE1 = "/dagge"
@@ -1363,21 +1640,22 @@ SlashCmdList["DAGGE"] = function(msg)
         else
             configFrame:Show()
             -- Sync UI elements to DB
-            DaggesBuffSlider:SetValue(DaggesAddonDB.buffCount or DEFAULTS.buffCount)
-            DaggesTotemSlider:SetValue(DaggesAddonDB.totemCount or 4)
-            DaggesLockCheck:SetChecked(DaggesAddonDB.locked)
-            DaggesShowBuffsCheck:SetChecked(DaggesAddonDB.showBuffs ~= false)
-            DaggesShowTotemsCheck:SetChecked(DaggesAddonDB.showTotems ~= false)
-            DaggesHideBGCheck:SetChecked(DaggesAddonDB.hideBackground)
-            DaggesShowSecondaryCheck:SetChecked(DaggesAddonDB.showSecondaryBuffs ~= false)
-            DaggesSecondarySlider:SetValue(DaggesAddonDB.secondaryBuffCount or 10)
-            DaggesHideCDMCheck:SetChecked(DaggesAddonDB.hideBlizzardCDM)
+            local db = GetCurrentProfile()
+            DaggesBuffSlider:SetValue(db.buffCount or DEFAULTS.buffCount)
+            DaggesTotemSlider:SetValue(db.totemCount or 4)
+            DaggesLockCheck:SetChecked(db.locked)
+            DaggesShowBuffsCheck:SetChecked(db.showBuffs ~= false)
+            DaggesShowTotemsCheck:SetChecked(db.showTotems ~= false)
+            DaggesHideBGCheck:SetChecked(db.hideBackground)
+            DaggesShowSecondaryCheck:SetChecked(db.showSecondaryBuffs ~= false)
+            DaggesSecondarySlider:SetValue(db.secondaryBuffCount or 10)
+            DaggesHideCDMCheck:SetChecked(db.hideBlizzardCDM)
         end
     
     elseif cmd == "count" then
         local n = tonumber(arg)
         if n and n >= 0 and n <= 40 then
-            DaggesAddonDB.buffCount = n
+            GetCurrentProfile().buffCount = n
             RefreshBuffs()
             print("|cff8878cc[Buff Tracker]|r Now showing " .. n .. " buffs.")
         else
@@ -1385,8 +1663,9 @@ SlashCmdList["DAGGE"] = function(msg)
         end
 
     elseif cmd == "lock" then
-        DaggesAddonDB.locked = not DaggesAddonDB.locked
-        if DaggesAddonDB.locked then
+        local db = GetCurrentProfile()
+        db.locked = not db.locked
+        if db.locked then
             print("|cff8878cc[Buff Tracker]|r Frame |cffff6666locked|r.")
         else
             print("|cff8878cc[Buff Tracker]|r Frame |cff66ff66unlocked|r.")
@@ -1395,17 +1674,18 @@ SlashCmdList["DAGGE"] = function(msg)
     elseif cmd == "reset" then
         frame:ClearAllPoints()
         frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
-        DaggesAddonDB.point    = "CENTER"
-        DaggesAddonDB.relPoint = "CENTER"
-        DaggesAddonDB.x        = 0
-        DaggesAddonDB.y        = 0
+        local db = GetCurrentProfile()
+        db.point    = "CENTER"
+        db.relPoint = "CENTER"
+        db.x        = 0
+        db.y        = 0
         
         totemFrame:ClearAllPoints()
         totemFrame:SetPoint("CENTER", UIParent, "CENTER", 0, -100)
-        DaggesAddonDB.totemPoint    = "CENTER"
-        DaggesAddonDB.totemRelPoint = "CENTER"
-        DaggesAddonDB.totemX        = 0
-        DaggesAddonDB.totemY        = -100
+        db.totemPoint    = "CENTER"
+        db.totemRelPoint = "CENTER"
+        db.totemX        = 0
+        db.totemY        = -100
         
         print("|cff8878cc[Buff Tracker]|r Position reset to center.")
 
