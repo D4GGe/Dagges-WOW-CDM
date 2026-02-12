@@ -1,0 +1,9 @@
+## Interface: 120000
+## Title: Dagge's Buff Tracker
+## Notes: Displays tracked buffs from the Cooldown Manager in a movable window.
+## Author: Dagge
+## Version: 1.0.0
+## SavedVariables: DaggesAddonDB
+## IconTexture: Interface\Icons\Spell_Holy_DivineIllumination
+
+core.lua
