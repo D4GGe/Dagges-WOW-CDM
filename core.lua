@@ -33,6 +33,26 @@ local DEFAULTS = {
     secondaryX = 0,
     secondaryY = -150,
     hideBlizzardCDM = true,
+    
+    -- CDM Categories
+    showEssential = true,
+    essentialCount = 10,
+    showUtility = true,
+    utilityCount = 10,
+    
+    essentialPoint = "CENTER",
+    essentialRelPoint = "CENTER",
+    essentialX = 0,
+    essentialY = 50,
+    essentialIconSize = 38,
+    essentialIconPad  = 3,
+    
+    utilityPoint = "CENTER",
+    utilityRelPoint = "CENTER",
+    utilityX = 0,
+    utilityY = 100,
+    utilityIconSize = 38,
+    utilityIconPad  = 3,
 }
 
 -- ── Profile Management ───────────────────────────────────────────────
@@ -89,48 +109,13 @@ local SAMPLE_TOTEM_ICONS = {
     136052, -- spell_nature_healingwavelesser
 }
 
--- ── UI Styling Helpers ──────────────────────────────────────────────
-local BACKDROP_CONFIG = {
-    bgFile   = "Interface\\DialogFrame\\UI-DialogBox-Background",
-    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-    tile     = true, tileSize = 16, edgeSize = 16,
-    insets   = { left = 4, right = 4, top = 4, bottom = 4 },
-}
-
-local function UpdateFrameStyles(forceClosed)
-    local configOpen = not forceClosed and _G["DaggesConfigFrame"] and _G["DaggesConfigFrame"]:IsShown()
-    local db = GetCurrentProfile()
-    local hide = db.hideBackground and not configOpen -- Force show if config is open
-    
-    local targetFrames = { 
-        _G["DaggesBuffTrackerFrame"], 
-        _G["DaggesTotemFrame"],
-        _G["DaggesSecondaryTrackerFrame"]
-    }
-    
-    for _, f in ipairs(targetFrames) do
-        if f then
-            if hide then
-                f:SetBackdrop(nil)
-                if f.accent then f.accent:Hide() end
-                if f.title then f.title:Hide() end
-            else
-                f:SetBackdrop(BACKDROP_CONFIG)
-                f:SetBackdropColor(0, 0, 0, 0.8)
-                if f.accent then f.accent:Show() end
-                if f.title then f.title:Show() end
-            end
-        end
-    end
-end
-
+-- ── Constants & Shared State ─────────────────────────────────────────
 local ICON_SIZE   = 38
 local ICON_PAD    = 3
 local HEADER_H    = 14
 local FRAME_PAD   = 4
 local UPDATE_HZ   = 0.25
 
--- ── Colors ───────────────────────────────────────────────────────────
 local CLR = {
     bg        = { 0.08, 0.08, 0.12, 0.92 },
     border    = { 0.40, 0.35, 0.55, 0.70 },
@@ -142,8 +127,50 @@ local CLR = {
     stacks    = { 1, 0.85, 0.40 },
 }
 
+local BACKDROP_CONFIG = {
+    bgFile   = "Interface\\DialogFrame\\UI-DialogBox-Background",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile     = true, tileSize = 16, edgeSize = 16,
+    insets   = { left = 4, right = 4, top = 4, bottom = 4 },
+}
+
+-- Forward declare frames for functions
+local frame, secondaryFrame, totemFrame, essentialFrame, utilityFrame
+
+-- ── UI Styling Helpers ──────────────────────────────────────────────
+
+local function UpdateFrameStyles(forceClosed)
+    local configOpen = not forceClosed and _G["DaggesConfigFrame"] and _G["DaggesConfigFrame"]:IsShown()
+    local db = GetCurrentProfile()
+    local hide = db.hideBackground and not configOpen -- Force show if config is open
+    
+    local targetFrames = { 
+        frame, 
+        totemFrame,
+        secondaryFrame,
+        essentialFrame,
+        utilityFrame
+    }
+    
+    for _, f in ipairs(targetFrames) do
+        if f then
+            if hide then
+                f:SetBackdrop(nil)
+                if f.accent then f.accent:Hide() end
+                if f.title then f.title:Hide() end
+            else
+                f:SetBackdrop(BACKDROP_CONFIG)
+                f:SetBackdropColor(unpack(CLR.bg))
+                f:SetBackdropBorderColor(unpack(CLR.border))
+                if f.accent then f.accent:Show() end
+                if f.title then f.title:Show() end
+            end
+        end
+    end
+end
+
 -- ── Main Frame ───────────────────────────────────────────────────────
-local frame = CreateFrame("Frame", "DaggesBuffTrackerFrame", UIParent, "BackdropTemplate")
+frame = CreateFrame("Frame", "DaggesBuffTrackerFrame", UIParent, "BackdropTemplate")
 frame:SetFrameStrata("MEDIUM")
 frame:SetClampedToScreen(true)
 frame:EnableMouse(true)
@@ -277,7 +304,7 @@ local function GetIcon(index)
 end
 
 -- ── Secondary Buff Frame (The 'Rest') ──────────────────────────────
-local secondaryFrame = CreateFrame("Frame", "DaggesSecondaryTrackerFrame", UIParent, "BackdropTemplate")
+secondaryFrame = CreateFrame("Frame", "DaggesSecondaryTrackerFrame", UIParent, "BackdropTemplate")
 secondaryFrame:SetFrameStrata("MEDIUM")
 secondaryFrame:SetClampedToScreen(true)
 secondaryFrame:EnableMouse(true)
@@ -414,7 +441,12 @@ local function SafeGT(a, b)
     return ok and val or nil
 end
 
-
+local function SafeNE(a, b)
+    if a == nil and b == nil then return false end
+    if a == nil or b == nil then return true end
+    local ok, val = pcall(function() return a ~= b end)
+    return ok and val or false
+end
 
 local function SafeBool(val)
     if val == nil then return false end
@@ -424,14 +456,147 @@ local function SafeBool(val)
     return res
 end
 
-local function SafeNE(a, b)
-    local ok, res = pcall(function() return a ~= b end)
-    if not ok then return true end
-    return res
+-- ── Essential Tracker Frame ──────────────────────────────────────────
+essentialFrame = CreateFrame("Frame", "DaggesEssentialTrackerFrame", UIParent, "BackdropTemplate")
+essentialFrame:SetFrameStrata("MEDIUM")
+essentialFrame:SetClampedToScreen(true)
+essentialFrame:EnableMouse(true)
+essentialFrame:SetMovable(true)
+essentialFrame:RegisterForDrag("LeftButton")
+
+    UpdateFrameStyles()
+
+local eAccent = essentialFrame:CreateTexture(nil, "OVERLAY")
+eAccent:SetHeight(1)
+eAccent:SetPoint("TOPLEFT", 2, -1)
+eAccent:SetPoint("TOPRIGHT", -2, -1)
+eAccent:SetColorTexture(unpack(CLR.accent))
+essentialFrame.accent = eAccent
+
+local eTitle = essentialFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+eTitle:SetPoint("TOP", 0, -2)
+eTitle:SetTextColor(unpack(CLR.title))
+eTitle:SetText("Essential")
+essentialFrame.title = eTitle
+
+essentialFrame:SetScript("OnDragStart", function(self)
+    local db = GetCurrentProfile()
+    if not db.locked then self:StartMoving() end
+end)
+essentialFrame:SetScript("OnDragStop", function(self)
+    self:StopMovingOrSizing()
+    local p, _, rp, px, py = self:GetPoint()
+    local db = GetCurrentProfile()
+    db.essentialPoint    = p
+    db.essentialRelPoint = rp
+    db.essentialX        = px
+    db.essentialY        = py
+end)
+
+-- ── Utility Tracker Frame ────────────────────────────────────────────
+utilityFrame = CreateFrame("Frame", "DaggesUtilityTrackerFrame", UIParent, "BackdropTemplate")
+utilityFrame:SetFrameStrata("MEDIUM")
+utilityFrame:SetClampedToScreen(true)
+utilityFrame:EnableMouse(true)
+utilityFrame:SetMovable(true)
+utilityFrame:RegisterForDrag("LeftButton")
+
+    UpdateFrameStyles()
+
+local uAccent = utilityFrame:CreateTexture(nil, "OVERLAY")
+uAccent:SetHeight(1)
+uAccent:SetPoint("TOPLEFT", 2, -1)
+uAccent:SetPoint("TOPRIGHT", -2, -1)
+uAccent:SetColorTexture(unpack(CLR.accent))
+utilityFrame.accent = uAccent
+
+local uTitle = utilityFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+uTitle:SetPoint("TOP", 0, -2)
+uTitle:SetTextColor(unpack(CLR.title))
+uTitle:SetText("Utility")
+utilityFrame.title = uTitle
+
+utilityFrame:SetScript("OnDragStart", function(self)
+    local db = GetCurrentProfile()
+    if not db.locked then self:StartMoving() end
+end)
+utilityFrame:SetScript("OnDragStop", function(self)
+    self:StopMovingOrSizing()
+    local p, _, rp, px, py = self:GetPoint()
+    local db = GetCurrentProfile()
+    db.utilityPoint    = p
+    db.utilityRelPoint = rp
+    db.utilityX        = px
+    db.utilityY        = py
+end)
+
+-- ── Icon Pools ───────────────────────────────────────────────────────
+local essentialIcons = {}
+local utilityIcons = {}
+
+local function CreateGenericIcon(index, pool, parent, sizeKey)
+    if pool[index] then return pool[index] end
+
+    local btn = CreateFrame("Frame", nil, parent)
+    local db = GetCurrentProfile()
+    local size = (db and db[sizeKey]) or DEFAULTS[sizeKey] or ICON_SIZE
+    btn:SetSize(size, size)
+
+    local bg = btn:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints(); bg:SetColorTexture(0.05, 0.05, 0.08, 1)
+
+    local tex = btn:CreateTexture(nil, "ARTWORK")
+    tex:SetPoint("TOPLEFT", 1, -1); tex:SetPoint("BOTTOMRIGHT", -1, 1)
+    tex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+    btn.icon = tex
+
+    for _, setup in ipairs({
+        {"TOPLEFT", "TOPRIGHT", true}, {"BOTTOMLEFT", "BOTTOMRIGHT", true},
+        {"TOPLEFT", "BOTTOMLEFT", false}, {"TOPRIGHT", "BOTTOMRIGHT", false},
+    }) do
+        local line = btn:CreateTexture(nil, "OVERLAY")
+        if setup[3] then line:SetHeight(1) else line:SetWidth(1) end
+        line:SetPoint(setup[1]); line:SetPoint(setup[2]); line:SetColorTexture(unpack(CLR.iconBord))
+    end
+
+    local cd = CreateFrame("Cooldown", nil, btn, "CooldownFrameTemplate")
+    cd:SetAllPoints(btn.icon); cd:SetDrawEdge(false); cd:SetDrawSwipe(true); cd:SetHideCountdownNumbers(false)
+    btn.cooldown = cd
+
+    local countFrame = CreateFrame("Frame", nil, btn)
+    countFrame:SetAllPoints(); countFrame:SetFrameLevel(btn:GetFrameLevel() + 10)
+    local count = countFrame:CreateFontString(nil, "OVERLAY")
+    count:SetFont(STANDARD_TEXT_FONT, 12, "OUTLINE"); count:SetPoint("BOTTOMRIGHT", -1, 2)
+    count:SetTextColor(unpack(CLR.stacks))
+    btn.count = count
+
+    btn:EnableMouse(true)
+    btn:SetScript("OnEnter", function(self)
+        if self.sourceFrame then
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            if self.sourceFrame.GetTooltipInfo then
+                local info = self.sourceFrame:GetTooltipInfo()
+                if info then GameTooltip:ProcessInfo(info) end
+            end
+            GameTooltip:Show()
+        end
+    end)
+    btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+    pool[index] = btn
+    return btn
+end
+
+local function GetEssentialIcon(index)
+    return CreateGenericIcon(index, essentialIcons, essentialFrame, "essentialIconSize")
+end
+
+local function GetUtilityIcon(index)
+    return CreateGenericIcon(index, utilityIcons, utilityFrame, "utilityIconSize")
 end
 
 -- ── Totem Logic Refactored: Separate Bar ───────────────────────────────
-local totemFrame = CreateFrame("Frame", "DaggesTotemFrame", UIParent, "BackdropTemplate")
+totemFrame = CreateFrame("Frame", "DaggesTotemFrame", UIParent, "BackdropTemplate")
 totemFrame:SetSize(4 * (ICON_SIZE + ICON_PAD) + FRAME_PAD*2 - ICON_PAD, ICON_SIZE + FRAME_PAD*2 + HEADER_H)
 totemFrame:SetFrameStrata("MEDIUM")
 totemFrame:SetClampedToScreen(true)
@@ -534,6 +699,9 @@ local function ResizeAllIcons()
     local sSize = db.secondaryIconSize or DEFAULTS.secondaryIconSize
     local tSize = db.totemIconSize or DEFAULTS.totemIconSize
     local tPad  = db.totemIconPad or DEFAULTS.totemIconPad
+    local eSize = db.essentialIconSize or DEFAULTS.essentialIconSize
+    local uSize = db.utilityIconSize or DEFAULTS.utilityIconSize
+
     -- Resize primary icons
     for _, btn in ipairs(icons) do
         btn:SetSize(pSize, pSize)
@@ -555,6 +723,17 @@ local function ResizeAllIcons()
         btn:SetPoint("TOPLEFT", totemFrame, "TOPLEFT",
             FRAME_PAD + (i-1) * (tSize + tPad),
             -(HEADER_H + FRAME_PAD))
+    end
+    -- Resize essential/utility icons
+    for _, btn in ipairs(essentialIcons) do
+        btn:SetSize(eSize, eSize)
+        btn.icon:SetPoint("TOPLEFT", 1, -1)
+        btn.icon:SetPoint("BOTTOMRIGHT", -1, 1)
+    end
+    for _, btn in ipairs(utilityIcons) do
+        btn:SetSize(uSize, uSize)
+        btn.icon:SetPoint("TOPLEFT", 1, -1)
+        btn.icon:SetPoint("BOTTOMRIGHT", -1, 1)
     end
     -- Update totem frame size
     local maxTotems = db.totemCount or 4
@@ -620,49 +799,87 @@ end
 
 
 
+-- ── Stack Count Helper ──────────────────────────────────────────────
+-- Uses hooked data first, then FontString mirroring, then aura API.
+-- Handles WoW 12.0 Secret Values via SafeGT/SafeNE.
+local function FindStacksFromChild(child)
+    if not child then return nil end
 
--- ── Refresh: read from BuffIconCooldownViewer ────────────────────────
-local function RefreshBuffs(forceClosed)
-    -- Visibility toggle
+    -- Method 0: Use cached stack text from our SetText hook (most reliable)
+    if child._daggesStackText then
+        local txt = child._daggesStackText
+        if SafeNE(txt, nil) and SafeNE(txt, "") and SafeNE(txt, "1") then
+            return txt
+        end
+    end
+
+    -- Method 1: Mirror the Blizzard frame's count text directly
+    local function FindCount(f)
+        if not f then return nil end
+        if f.Count then return f.Count end
+        local regions = { f:GetRegions() }
+        for _, reg in ipairs(regions) do
+            if reg:IsObjectType("FontString") then
+                local n = reg:GetName()
+                if n and n:find("Count") then return reg end
+                if not n and #regions == 1 then return reg end
+            end
+        end
+        return nil
+    end
+
+    local sourceCount = FindCount(child)
+    if not sourceCount and child.Applications then
+        sourceCount = FindCount(child.Applications)
+    end
+
+    if sourceCount then
+        local txt = sourceCount:GetText()
+        local isVisible = sourceCount:IsShown()
+        if SafeNE(txt, nil) and SafeNE(txt, "") and SafeNE(txt, "1") and isVisible then
+            return txt
+        end
+    end
+
+    -- Method 2: Fallback to Aura Data
+    local aura = nil
+    pcall(function()
+        aura = C_UnitAuras.GetAuraDataByAuraInstanceID(
+            child.auraDataUnit or "player",
+            child.auraInstanceID
+        )
+    end)
+    if not aura and child.auraSpellID then
+        pcall(function()
+            aura = C_UnitAuras.GetPlayerAuraBySpellID(child.auraSpellID)
+        end)
+    end
+    if aura and aura.applications and SafeGT(aura.applications, 1) then
+        return tostring(aura.applications)
+    end
+
+    return nil
+end
+
+-- ── Refresh: read from CDM viewers ──────────────────────────────────
+local function PopulateFromViewer(viewer, getIconFunc, pool, maxCount, trackerFrame, onlyActive, configOpen)
+    if not trackerFrame then return 0 end
+    local itemFrames = {}
+    if viewer then
+        itemFrames = viewer.GetItemFrames and viewer:GetItemFrames() or { viewer:GetChildren() }
+    end
+    local currentIdx = 0
+    
+    -- Hide all in pool first
+    for _, b in ipairs(pool) do b:Hide() end
+    
     local db = GetCurrentProfile()
-    local configOpen = not forceClosed and _G["DaggesConfigFrame"] and _G["DaggesConfigFrame"]:IsShown()
-    if not db.showBuffs and not db.showSecondaryBuffs then
-        frame:Hide()
-        secondaryFrame:Hide()
-        return
-    end
 
-    local viewer = _G.BuffIconCooldownViewer
-    local trackedIDs = {} -- Store what we track in the primary list
-    if not viewer then return end
-
-    local maxBuffs = db.buffCount or DEFAULTS.buffCount
-    local now = GetTime()
-    local idx = 0
-
-    -- Get the item frames from the Blizzard CooldownViewer
-    local itemFrames
-    if viewer.GetItemFrames then
-        itemFrames = viewer:GetItemFrames()
-    end
-
-    -- Fallback: get direct children
-    if not itemFrames or #itemFrames == 0 then
-        itemFrames = { viewer:GetChildren() }
-    end
-
-    -- Show ALL tracked buffs — split between primary and secondary
-    local primaryIdx = 0
-    local secondaryIdx = 0
-    local maxPrimary = db.buffCount or DEFAULTS.buffCount
-    local maxSecondary = db.secondaryBuffCount or 10
-
-    for i, child in ipairs(itemFrames) do
-        if child.Icon then
+    for _, child in ipairs(itemFrames) do
+        if child.Icon and currentIdx < maxCount then
             local isActive = child:IsShown()
             local texFile = child.Icon:GetTexture()
 
-            -- For hidden children, try to get the icon via cooldownInfo
             if not texFile and child.cooldownInfo then
                 pcall(function()
                     local sid = child.cooldownInfo.overrideSpellID or child.cooldownInfo.spellID
@@ -673,261 +890,226 @@ local function RefreshBuffs(forceClosed)
                 end)
             end
 
+            if texFile and (not onlyActive or isActive) then
+                currentIdx = currentIdx + 1
+                local btn = getIconFunc(currentIdx)
+                if btn then
+                    btn.sourceFrame = child
+                    btn.icon:SetTexture(texFile)
+                    
+                    if isActive then
+                        btn.icon:SetDesaturated(false); btn.icon:SetAlpha(1.0)
+                    else
+                        btn.icon:SetDesaturated(true); btn.icon:SetAlpha(0.45)
+                    end
+
+                    -- Mirror Count
+                    btn.count:Hide()
+                    if isActive then
+                        local stackTxt = FindStacksFromChild(child)
+                        if stackTxt then
+                            btn.count:SetText(stackTxt)
+                            btn.count:Show()
+                        end
+                    end
+
+                    -- Mirror Cooldown
+                    pcall(function()
+                        if isActive then
+                            btn.cooldown:SetCooldown(child._daggesCDStart, child._daggesCDDuration)
+                        else
+                            btn.cooldown:SetCooldown(0, 0)
+                        end
+                    end)
+
+                    btn:Show()
+                end
+            end
+        end
+    end
+
+    -- Sample icons if config open
+    if configOpen then
+        for j = currentIdx + 1, maxCount do
+            local btn = getIconFunc(j)
+            if btn then
+                btn.sourceFrame = nil
+                btn.icon:SetTexture(SAMPLE_ICONS[((j + 2) % #SAMPLE_ICONS) + 1])
+                btn.icon:SetDesaturated(true); btn.icon:SetAlpha(0.5)
+                btn.cooldown:SetCooldown(0, 0); btn.count:Hide(); btn:Show()
+            end
+        end
+        currentIdx = math.max(currentIdx, maxCount)
+    end
+    
+    local size, pad
+    if trackerFrame == frame then
+        size = db.primaryIconSize or DEFAULTS.primaryIconSize
+        pad = db.primaryIconPad or DEFAULTS.primaryIconPad
+    elseif trackerFrame == essentialFrame then
+        size = db.essentialIconSize or DEFAULTS.essentialIconSize
+        pad = db.essentialIconPad or DEFAULTS.essentialIconPad
+    elseif trackerFrame == utilityFrame then
+        size = db.utilityIconSize or DEFAULTS.utilityIconSize
+        pad = db.utilityIconPad or DEFAULTS.utilityIconPad
+    else
+        -- Secondary/Fallback
+        size = db.secondaryIconSize or DEFAULTS.secondaryIconSize
+        pad = db.secondaryIconPad or DEFAULTS.secondaryIconPad
+    end
+    
+    if currentIdx > 0 or configOpen then
+        trackerFrame:SetSize(currentIdx * (size + pad) + FRAME_PAD*2 - pad, size + FRAME_PAD*2 + HEADER_H)
+        trackerFrame:Show()
+        -- Reposition icons
+        for j = 1, currentIdx do
+            local b = pool[j]
+            b:ClearAllPoints()
+            b:SetPoint("TOPLEFT", trackerFrame, "TOPLEFT", FRAME_PAD + (j-1)*(size+pad), -(HEADER_H + FRAME_PAD))
+        end
+    else
+        trackerFrame:Hide()
+    end
+    
+    return currentIdx
+end
+
+-- ── Refresh: read from BuffIconCooldownViewer ────────────────────────
+local function RefreshBuffs(forceClosed)
+    UpdateFrameStyles(forceClosed)
+    local db = GetCurrentProfile()
+    local configOpen = not forceClosed and _G["DaggesConfigFrame"] and _G["DaggesConfigFrame"]:IsShown()
+    
+    -- Essential
+    if db.showEssential then
+        PopulateFromViewer(_G.EssentialCooldownViewer, GetEssentialIcon, essentialIcons, db.essentialCount or 10, essentialFrame, false, configOpen)
+    else
+        essentialFrame:Hide()
+    end
+
+    -- Utility
+    if db.showUtility then
+        PopulateFromViewer(_G.UtilityCooldownViewer, GetUtilityIcon, utilityIcons, db.utilityCount or 10, utilityFrame, false, configOpen)
+    else
+        utilityFrame:Hide()
+    end
+
+    -- Buffs (Primary/Secondary logic)
+    local viewer = _G.BuffIconCooldownViewer
+    local itemFrames = {}
+    if viewer then
+        itemFrames = viewer.GetItemFrames and viewer:GetItemFrames() or { viewer:GetChildren() }
+    end
+
+    local primaryIdx = 0
+    local secondaryIdx = 0
+    local maxPrimary = db.buffCount or 5
+    local maxSecondary = db.secondaryBuffCount or 10
+
+    -- Hide all first
+    for _, b in ipairs(icons) do b:Hide() end
+    for _, b in ipairs(secondaryIcons) do b:Hide() end
+
+    for _, child in ipairs(itemFrames) do
+        if child.Icon then
+            local isActive = child:IsShown()
+            local texFile = child.Icon:GetTexture()
             if texFile then
                 local isPrimary = (primaryIdx < maxPrimary)
-                
-                -- Centering/Filtering for Secondary: only show active ones
-                if not isPrimary and not isActive then
-                    -- Skip inactive buffs for the secondary group
-                else
+                if isPrimary or isActive then
                     local btn = nil
                     if isPrimary then
-                        primaryIdx = primaryIdx + 1
-                        btn = GetIcon(primaryIdx)
-                    else
-                        secondaryIdx = secondaryIdx + 1
-                        btn = GetSecondaryIcon(secondaryIdx)
+                        primaryIdx = primaryIdx + 1; btn = GetIcon(primaryIdx)
+                    elseif secondaryIdx < maxSecondary then
+                        secondaryIdx = secondaryIdx + 1; btn = GetSecondaryIcon(secondaryIdx)
                     end
 
                     if btn then
                         btn.sourceFrame = child
                         btn.icon:SetTexture(texFile)
-
-                        if isActive then
-                            btn.icon:SetDesaturated(false)
-                            btn.icon:SetAlpha(1.0)
-                        else
-                            btn.icon:SetDesaturated(true)
-                            btn.icon:SetAlpha(0.45)
-                        end
-
-                        -- ── Stacks Logic ──
+                        btn.icon:SetDesaturated(not isActive); btn.icon:SetAlpha(isActive and 1.0 or 0.45)
+                        
+                        -- Count/CD logic for Buffs
                         btn.count:Hide()
                         if isActive then
-                            -- Method 1: Mirror the Blizzard frame's count text directly
-                            -- This is safest for 12.0 Secret Values and combat updates.
-                            local function FindCount(f)
-                                if not f then return nil end
-                                if f.Count then return f.Count end
-                                local regions = { f:GetRegions() }
-                                for _, reg in ipairs(regions) do
-                                    if reg:IsObjectType("FontString") then
-                                        local n = reg:GetName()
-                                        if n and n:find("Count") then return reg end
-                                        -- Sometimes it's just a FontString with no name but it's the only one
-                                        if not n and #regions == 1 then return reg end
-                                    end
-                                end
-                                return nil
-                            end
-
-                            local sourceCount = FindCount(child)
-                            if not sourceCount and child.Applications then
-                                sourceCount = FindCount(child.Applications)
-                            end
-
-                            local hasUIMirror = false
-                            if sourceCount then
-                                local txt = sourceCount:GetText()
-                                -- Blizzard frames might show " " or other placeholders for 1
-                                local isVisible = sourceCount:IsShown()
-                                
-                                -- Use SafeNE to avoid secret string comparison errors
-                                if SafeNE(txt, nil) and SafeNE(txt, "") and SafeNE(txt, "1") and isVisible then
-                                    pcall(function()
-                                        btn.count:SetText(txt)
-                                        btn.count:Show()
-                                        hasUIMirror = true
-                                    end)
-                                end
-                            end
-
-                            -- Method 2: Fallback to Aura Data
-                            if not hasUIMirror then
-                                local aura = nil
-                                pcall(function()
-                                    aura = C_UnitAuras.GetAuraDataByAuraInstanceID(
-                                        child.auraDataUnit or "player",
-                                        child.auraInstanceID
-                                    )
-                                end)
-                                if not aura and child.auraSpellID then
-                                    pcall(function()
-                                        aura = C_UnitAuras.GetPlayerAuraBySpellID(child.auraSpellID)
-                                    end)
-                                end
-                                -- USE SafeGT to avoid "Secret Value" comparison errors
-                                if aura and aura.applications and SafeGT(aura.applications, 1) then
-                                    btn.count:SetText(aura.applications)
-                                    btn.count:Show()
-                                end
+                            local stackTxt = FindStacksFromChild(child)
+                            if stackTxt then
+                                btn.count:SetText(stackTxt)
+                                btn.count:Show()
                             end
                         end
-
-                        -- ── Cooldown Logic ──
-                        -- Try to set cooldown from cached values (set by our SetCooldown hook)
-                        -- This works for buffs gained in combat because Blizzard calls
-                        -- SetCooldown with real numbers, and our hook captures them.
-                        local cdCopied = false
-                        if isActive then
-                            -- Method 1: Use cached values from our SetCooldown hook
-                            -- Values may be Secret — don't compare, just pass to SetCooldown
-                            -- The C widget API handles Secret Values natively.
-                            pcall(function()
+                        pcall(function()
+                            if isActive then
                                 btn.cooldown:SetCooldown(child._daggesCDStart, child._daggesCDDuration)
-                                cdCopied = true
-                            end)
-
-                            -- Method 2: Try reading from source Cooldown frame directly
-                            if not cdCopied then
-                                pcall(function()
-                                    local srcCD = child.Cooldown
-                                    if not srcCD then
-                                        local kids = { child:GetChildren() }
-                                        for _, kid in ipairs(kids) do
-                                            if kid.GetCooldownTimes then srcCD = kid; break end
-                                        end
-                                    end
-                                    if srcCD and srcCD.GetCooldownTimes then
-                                        local startMs, durMs = srcCD:GetCooldownTimes()
-                                        if startMs and durMs and SafeGT(startMs, 0) and SafeGT(durMs, 0) then
-                                            pcall(function()
-                                                btn.cooldown:SetCooldown(startMs / 1000, durMs / 1000)
-                                                cdCopied = true
-                                            end)
-                                        end
-                                    end
-                                end)
+                            else
+                                btn.cooldown:SetCooldown(0, 0)
                             end
-
-                            -- Method 3: Fallback to aura data (works out of combat)
-                            if not cdCopied then
-                                local aura = nil
-                                pcall(function()
-                                    aura = C_UnitAuras.GetAuraDataByAuraInstanceID(
-                                        child.auraDataUnit or "player",
-                                        child.auraInstanceID
-                                    )
-                                end)
-                                if not aura and child.auraSpellID then
-                                    pcall(function()
-                                        aura = C_UnitAuras.GetPlayerAuraBySpellID(child.auraSpellID)
-                                    end)
-                                end
-                                if aura then
-                                    pcall(function()
-                                        if aura.duration > 0 then
-                                            btn.cooldown:SetCooldown(
-                                                aura.expirationTime - aura.duration,
-                                                aura.duration
-                                            )
-                                            cdCopied = true
-                                        end
-                                    end)
-                                end
-                            end
-                        end
-                        -- Only clear cooldown for inactive buffs.
-                        -- For active buffs, leave existing cooldown running.
-                        if not cdCopied and not isActive then
-                            btn.cooldown:SetCooldown(0, 0)
-                        end
-
+                        end)
+                        
                         btn:Show()
-                        btn.isPrimary = isPrimary
-                        btn.displayIdx = isPrimary and primaryIdx or secondaryIdx
-
                     end
                 end
             end
         end
     end
 
-    -- Hide unused primary icons
-    for j = primaryIdx + 1, #icons do
-        icons[j]:Hide()
-    end
-    -- Hide unused secondary icons
-    for j = secondaryIdx + 1, #secondaryIcons do
-        secondaryIcons[j]:Hide()
-    end
-
-
-    -- ── Sample Preview Icons (config open) ──────────────────────────
-    local configOpen = _G["DaggesConfigFrame"] and _G["DaggesConfigFrame"]:IsShown()
+    -- Sample icons for Buffs if config open
     if configOpen then
-        -- Fill remaining primary slots with samples
-        local maxPrimarySample = db.buffCount or DEFAULTS.buffCount
-        for j = primaryIdx + 1, maxPrimarySample do
+        for j = primaryIdx + 1, maxPrimary do
             local btn = GetIcon(j)
-            btn.sourceFrame = nil
-            btn.icon:SetTexture(SAMPLE_ICONS[((j - 1) % #SAMPLE_ICONS) + 1])
-            btn.icon:SetDesaturated(true)
-            btn.icon:SetAlpha(0.5)
-            btn.cooldown:SetCooldown(0, 0)
-            btn.count:SetText("")
-            btn.count:Hide()
-            btn:Show()
+            if btn then
+                btn.sourceFrame = nil
+                btn.icon:SetTexture(SAMPLE_ICONS[((j - 1) % #SAMPLE_ICONS) + 1])
+                btn.icon:SetDesaturated(true); btn.icon:SetAlpha(0.5)
+                btn.cooldown:SetCooldown(0, 0); btn.count:Hide(); btn:Show()
+            end
         end
-        if maxPrimarySample > primaryIdx then primaryIdx = maxPrimarySample end
-
-        -- Fill remaining secondary slots with samples
-        local maxSecondarySample = db.secondaryBuffCount or DEFAULTS.secondaryBuffCount
-        for j = secondaryIdx + 1, maxSecondarySample do
-            local btn = GetSecondaryIcon(j)
-            btn.sourceFrame = nil
-            btn.icon:SetTexture(SAMPLE_ICONS[((j + 4) % #SAMPLE_ICONS) + 1])
-            btn.icon:SetDesaturated(true)
-            btn.icon:SetAlpha(0.5)
-            btn.cooldown:SetCooldown(0, 0)
-            btn.count:SetText("")
-            btn.count:Hide()
-            btn:Show()
+        primaryIdx = math.max(primaryIdx, maxPrimary)
+        
+        if db.showSecondaryBuffs then
+            for j = secondaryIdx + 1, maxSecondary do
+                local btn = GetSecondaryIcon(j)
+                if btn then
+                    btn.sourceFrame = nil
+                    btn.icon:SetTexture(SAMPLE_ICONS[((j + 4) % #SAMPLE_ICONS) + 1])
+                    btn.icon:SetDesaturated(true); btn.icon:SetAlpha(0.5)
+                    btn.cooldown:SetCooldown(0, 0); btn.count:Hide(); btn:Show()
+                end
+            end
+            secondaryIdx = math.max(secondaryIdx, maxSecondary)
         end
-        if maxSecondarySample > secondaryIdx then secondaryIdx = maxSecondarySample end
     end
-    
-    -- Primary Frame: Left-aligned as before
+
+    -- Frame Sizing & Positioning
     if primaryIdx > 0 or configOpen then
         local pSize = db.primaryIconSize or DEFAULTS.primaryIconSize
-        local pPad  = db.primaryIconPad or DEFAULTS.primaryIconPad
-        local w = FRAME_PAD * 2 + primaryIdx * (pSize + pPad) - pPad
-        local h = HEADER_H + FRAME_PAD * 2 + pSize
-        frame:SetSize(math.max(w, 60), h)
-        frame:Show()
-        
+        local pPad = db.primaryIconPad or DEFAULTS.primaryIconPad
+        frame:SetSize(primaryIdx * (pSize + pPad) + FRAME_PAD*2 - pPad, pSize + FRAME_PAD*2 + HEADER_H)
+        if db.showBuffs then frame:Show() else frame:Hide() end
         for j = 1, primaryIdx do
-            local btn = icons[j]
-            btn:ClearAllPoints()
-            btn:SetPoint("TOPLEFT", frame, "TOPLEFT",
-                FRAME_PAD + (j-1) * (pSize + pPad),
-                -(HEADER_H + FRAME_PAD))
+            local b = icons[j]
+            if b then
+                b:ClearAllPoints()
+                b:SetPoint("TOPLEFT", frame, "TOPLEFT", FRAME_PAD + (j-1)*(pSize+pPad), -(HEADER_H + FRAME_PAD))
+            end
         end
     else
         frame:Hide()
     end
-
-    -- Secondary Frame: Centered growth
-    if (secondaryIdx > 0 or configOpen) and db.showSecondaryBuffs then
+    
+    if secondaryIdx > 0 or (configOpen and db.showSecondaryBuffs) then
         local sSize = db.secondaryIconSize or DEFAULTS.secondaryIconSize
-        local sPad  = db.secondaryIconPad or DEFAULTS.secondaryIconPad
-        local w = FRAME_PAD * 2 + secondaryIdx * (sSize + sPad) - sPad
-        -- If config is open but no icons, show a minimum width
-        local frameW = math.max(w, 60)
-        local h = HEADER_H + FRAME_PAD * 2 + sSize
-        secondaryFrame:SetSize(frameW, h)
-        secondaryFrame:Show()
-        
-        -- Calculate centered start X for secondary icons
-        local totalIconW = secondaryIdx * (sSize + sPad) - sPad
-        local startX = (frameW - totalIconW) / 2
-        
+        local sPad = db.secondaryIconPad or DEFAULTS.secondaryIconPad
+        local w = secondaryIdx * (sSize + sPad) + FRAME_PAD*2 - sPad
+        secondaryFrame:SetSize(w, sSize + FRAME_PAD*2 + HEADER_H)
+        if db.showSecondaryBuffs then secondaryFrame:Show() else secondaryFrame:Hide() end
+        local startX = (w - (secondaryIdx*(sSize+sPad)-sPad))/2
         for j = 1, secondaryIdx do
-            local btn = secondaryIcons[j]
-            btn:ClearAllPoints()
-            btn:SetPoint("TOPLEFT", secondaryFrame, "TOPLEFT",
-                startX + (j-1) * (sSize + sPad),
-                -(HEADER_H + FRAME_PAD))
+            local b = secondaryIcons[j]
+            if b then
+                b:ClearAllPoints()
+                b:SetPoint("TOPLEFT", secondaryFrame, "TOPLEFT", startX + (j-1)*(sSize+sPad), -(HEADER_H + FRAME_PAD))
+            end
         end
     else
         secondaryFrame:Hide()
@@ -938,31 +1120,30 @@ end
 local hooked = false
 
 local function HookViewer()
-    local viewer = _G.BuffIconCooldownViewer
-    if not viewer or hooked then return end
-    hooked = true
-
-    -- Hook Layout so we refresh when Blizzard rearranges icons
-    if viewer.Layout then
-        hooksecurefunc(viewer, "Layout", function()
-            C_Timer.After(0.05, RefreshBuffs)
-        end)
+    local viewers = {
+        _G.BuffIconCooldownViewer,
+        _G.EssentialCooldownViewer,
+        _G.UtilityCooldownViewer
+    }
+    
+    local anyAvailable = false
+    for _, v in ipairs(viewers) do
+        if v then anyAvailable = true break end
     end
+    
+    if not anyAvailable or hooked then return end
+    hooked = true
 
     -- Hook child show/hide to catch individual buff changes
     local function HookChild(child)
-        if child.daggesHooked then return end
+        if not child or child.daggesHooked then return end
         child.daggesHooked = true
         child:HookScript("OnShow", function() C_Timer.After(0.05, RefreshBuffs) end)
         child:HookScript("OnHide", function() C_Timer.After(0.05, RefreshBuffs) end)
 
-        -- Hook SetCooldown on the child's Cooldown frame to capture start/duration
-        -- This is the key to making durations work for buffs gained IN combat,
-        -- because Blizzard calls SetCooldown with real numbers internally.
         pcall(function()
             local cdFrame = child.Cooldown
             if not cdFrame then
-                -- Try to find it among children
                 local kids = { child:GetChildren() }
                 for _, kid in ipairs(kids) do
                     if kid.SetCooldown and kid.GetCooldownTimes then
@@ -979,34 +1160,77 @@ local function HookViewer()
                 end)
             end
         end)
-    end
 
-    local children = { viewer:GetChildren() }
-    for _, child in ipairs(children) do
-        HookChild(child)
-    end
-
-    -- Monitor new children
-    viewer:HookScript("OnUpdate", function(self)
-        local currentChildren = { self:GetChildren() }
-        for _, child in ipairs(currentChildren) do
-            if not child.daggesHooked then
-                HookChild(child)
-                C_Timer.After(0.05, RefreshBuffs)
+        -- Hook Applications FontString to capture stack count text
+        -- (same pattern as the SetCooldown hook above)
+        pcall(function()
+            if child.Applications then
+                local regions = { child.Applications:GetRegions() }
+                for _, reg in ipairs(regions) do
+                    if reg:IsObjectType("FontString") then
+                        hooksecurefunc(reg, "SetText", function(_, text)
+                            child._daggesStackText = text
+                            C_Timer.After(0.05, RefreshBuffs)
+                        end)
+                        -- Also hook Show/Hide to track visibility
+                        reg:HookScript("OnShow", function()
+                            child._daggesStackShown = true
+                            C_Timer.After(0.05, RefreshBuffs)
+                        end)
+                        reg:HookScript("OnHide", function()
+                            child._daggesStackShown = false
+                            C_Timer.After(0.05, RefreshBuffs)
+                        end)
+                    end
+                end
             end
-        end
-    end)
-
-    RefreshBuffs()
-
-    -- Hide Blizzard CDM if requested
-    if GetCurrentProfile().hideBlizzardCDM then
-        if viewer.SetAlpha then viewer:SetAlpha(0) end
-        -- Avoid Hide() as it may stop OnUpdate or visibility events
-        viewer:HookScript("OnShow", function(self)
-            if GetCurrentProfile().hideBlizzardCDM and self.SetAlpha then self:SetAlpha(0) end
+            -- Also hook child.Count if it exists
+            if child.Count and child.Count.SetText then
+                hooksecurefunc(child.Count, "SetText", function(_, text)
+                    child._daggesStackText = text
+                    C_Timer.After(0.05, RefreshBuffs)
+                end)
+            end
         end)
     end
+
+    for _, viewer in ipairs(viewers) do
+        if viewer then
+            -- Hook Layout
+            if viewer.Layout then
+                hooksecurefunc(viewer, "Layout", function()
+                    C_Timer.After(0.05, RefreshBuffs)
+                end)
+            end
+
+            -- Hook existing children
+            local children = { viewer:GetChildren() }
+            for _, child in ipairs(children) do
+                HookChild(child)
+            end
+
+            -- Monitor new children
+            viewer:HookScript("OnUpdate", function(self)
+                local currentChildren = { self:GetChildren() }
+                for _, child in ipairs(currentChildren) do
+                    if not child.daggesHooked then
+                        HookChild(child)
+                        C_Timer.After(0.05, RefreshBuffs)
+                    end
+                end
+            end)
+
+            -- Hide Blizzard CDM if requested
+            if GetCurrentProfile().hideBlizzardCDM then
+                if viewer.SetAlpha then viewer:SetAlpha(0) end
+                viewer:HookScript("OnShow", function(self)
+                    if GetCurrentProfile().hideBlizzardCDM and self.SetAlpha then self:SetAlpha(0) end
+                end)
+            end
+        end
+    end
+
+    RefreshBuffs()
 end
 
 -- ── Update Timer ─────────────────────────────────────────────────────
@@ -1087,6 +1311,26 @@ frame:SetScript("OnEvent", function(self, event, arg1, ...)
             db.secondaryY or -150
         )
 
+        -- Restore position (Essential Frame)
+        essentialFrame:ClearAllPoints()
+        essentialFrame:SetPoint(
+            db.essentialPoint or "CENTER",
+            UIParent,
+            db.essentialRelPoint or "CENTER",
+            db.essentialX or 0,
+            db.essentialY or 50
+        )
+
+        -- Restore position (Utility Frame)
+        utilityFrame:ClearAllPoints()
+        utilityFrame:SetPoint(
+            db.utilityPoint or "CENTER",
+            UIParent,
+            db.utilityRelPoint or "CENTER",
+            db.utilityX or 0,
+            db.utilityY or 100
+        )
+
         if db.showBuffs then
             frame:Show()
             RefreshBuffs()
@@ -1128,6 +1372,20 @@ frame:SetScript("OnEvent", function(self, event, arg1, ...)
         db.secondaryRelPoint = srp
         db.secondaryX        = spx
         db.secondaryY        = spy
+
+        -- Save Essential position
+        local ep, _, erp, epx, epy = essentialFrame:GetPoint()
+        db.essentialPoint    = ep
+        db.essentialRelPoint = erp
+        db.essentialX        = epx
+        db.essentialY        = epy
+
+        -- Save Utility position
+        local up, _, urp, upx, upy = utilityFrame:GetPoint()
+        db.utilityPoint    = up
+        db.utilityRelPoint = urp
+        db.utilityX        = upx
+        db.utilityY        = upy
 
         db.visible = frame:IsShown()
         
@@ -1279,8 +1537,8 @@ local function CreateConfigFrame()
 
     local function CreateTab(id, text)
         local tab = CreateFrame("Button", nil, f)
-        tab:SetSize(80, 25)
-        tab:SetPoint("TOPLEFT", f, "TOPLEFT", 15 + (id-1) * 85, -45)
+        tab:SetSize(70, 25) -- Slightly narrower to fit 4 tabs
+        tab:SetPoint("TOPLEFT", f, "TOPLEFT", 10 + (id-1) * 75, -45)
         
         local bg = tab:CreateTexture(nil, "BACKGROUND")
         bg:SetAllPoints()
@@ -1308,6 +1566,7 @@ local function CreateConfigFrame()
     local generalTab = CreateTab(1, "General")
     local buffsTab   = CreateTab(2, "Buffs")
     local totemsTab  = CreateTab(3, "Totems")
+    local cdsTab     = CreateTab(4, "Cooldowns")
 
     -- ── Helpers (Updated for parenting) ──
     local function MakeHeader(parent, text, yOffset)
@@ -1501,6 +1760,33 @@ local function CreateConfigFrame()
     y = y - 45
     MakeSlider(totemsTab, "DaggesTotemPadSlider", "Spacing", y, 0, 15, "totemIconPad", DEFAULTS.totemIconPad, function() ResizeAllIcons(); UpdateTotemBar() end)
 
+    -- ════════════════════════════════════════════════════════════════
+    -- TAB 4: COOLDOWNS (Essential & Utility)
+    -- ════════════════════════════════════════════════════════════════
+    y = -10
+    MakeHeader(cdsTab, "-- Essential Cooldowns --", y)
+    y = y - 25
+    MakeCheck(cdsTab, "DaggesShowEssentialCheck", "Show Essential", y, 20, "showEssential", true, RefreshBuffs)
+    
+    y = y - 35
+    MakeSlider(cdsTab, "DaggesEssentialSlider", "Max Icons", y, 1, 20, "essentialCount", 10, RefreshBuffs)
+    y = y - 45
+    MakeSlider(cdsTab, "DaggesEssentialSizeSlider", "Size", y, 20, 60, "essentialIconSize", DEFAULTS.essentialIconSize, function() ResizeAllIcons(); RefreshBuffs() end)
+    y = y - 45
+    MakeSlider(cdsTab, "DaggesEssentialPadSlider", "Spacing", y, 0, 15, "essentialIconPad", DEFAULTS.essentialIconPad, function() ResizeAllIcons(); RefreshBuffs() end)
+    
+    y = y - 55
+    MakeHeader(cdsTab, "-- Utility Cooldowns --", y)
+    y = y - 25
+    MakeCheck(cdsTab, "DaggesShowUtilityCheck", "Show Utility", y, 20, "showUtility", true, RefreshBuffs)
+    
+    y = y - 35
+    MakeSlider(cdsTab, "DaggesUtilitySlider", "Max Icons", y, 1, 20, "utilityCount", 10, RefreshBuffs)
+    y = y - 45
+    MakeSlider(cdsTab, "DaggesUtilitySizeSlider", "Size", y, 20, 60, "utilityIconSize", DEFAULTS.utilityIconSize, function() ResizeAllIcons(); RefreshBuffs() end)
+    y = y - 45
+    MakeSlider(cdsTab, "DaggesUtilityPadSlider", "Spacing", y, 0, 15, "utilityIconPad", DEFAULTS.utilityIconPad, function() ResizeAllIcons(); RefreshBuffs() end)
+
     -- Default Tab
     ShowTab(1)
 
@@ -1538,24 +1824,21 @@ SetProfile = function(name)
     RefreshBuffs()
     UpdateTotemBar()
     
-    frame:ClearAllPoints()
-    frame:SetPoint(db.point or "CENTER", UIParent, db.relPoint or "CENTER", db.x or 0, db.y or 0)
-    
-    local tf = _G["DaggesTotemFrame"]
-    if tf then
-        tf:ClearAllPoints()
-        tf:SetPoint(db.totemPoint or "CENTER", UIParent, db.totemRelPoint or "CENTER", db.totemX or 0, db.totemY or -100)
-    end
-    
-    local sf = _G["DaggesSecondaryTrackerFrame"]
-    if sf then
-        sf:ClearAllPoints()
-        sf:SetPoint(db.secondaryPoint or "CENTER", UIParent, db.secondaryRelPoint or "CENTER", db.secondaryX or 0, db.secondaryY or -150)
+    local function ApplyPos(f, dbP, dbRP, dbX, dbY)
+        if f then
+            f:ClearAllPoints()
+            f:SetPoint(dbP or "CENTER", UIParent, dbRP or "CENTER", dbX or 0, dbY or 0)
+        end
     end
 
+    ApplyPos(frame, db.point, db.relPoint, db.x, db.y)
+    ApplyPos(_G["DaggesTotemFrame"], db.totemPoint, db.totemRelPoint, db.totemX, db.totemY)
+    ApplyPos(secondaryFrame, db.secondaryPoint, db.secondaryRelPoint, db.secondaryX, db.secondaryY)
+    ApplyPos(essentialFrame, db.essentialPoint, db.essentialRelPoint, db.essentialX, db.essentialY)
+    ApplyPos(utilityFrame, db.utilityPoint, db.utilityRelPoint, db.utilityX, db.utilityY)
+
     if DaggesConfigFrame and DaggesConfigFrame:IsShown() then
-        DaggesConfigFrame:Hide()
-        DaggesConfigFrame:Show()
+        DaggesConfigFrame:Hide(); DaggesConfigFrame:Show()
     end
 end
 
@@ -1630,6 +1913,21 @@ SlashCmdList["DAGGE"] = function(msg)
             DaggesShowSecondaryCheck:SetChecked(db.showSecondaryBuffs ~= false)
             DaggesSecondarySlider:SetValue(db.secondaryBuffCount or 10)
             DaggesHideCDMCheck:SetChecked(db.hideBlizzardCDM)
+            
+            -- Essential Sync
+            DaggesShowEssentialCheck:SetChecked(db.showEssential ~= false)
+            DaggesEssentialSlider:SetValue(db.essentialCount or 10)
+            DaggesEssentialSizeSlider:SetValue(db.essentialIconSize or DEFAULTS.essentialIconSize)
+            DaggesEssentialPadSlider:SetValue(db.essentialIconPad or DEFAULTS.essentialIconPad)
+            
+            -- Utility Sync
+            DaggesShowUtilityCheck:SetChecked(db.showUtility ~= false)
+            DaggesUtilitySlider:SetValue(db.utilityCount or 10)
+            DaggesUtilitySizeSlider:SetValue(db.utilityIconSize or DEFAULTS.utilityIconSize)
+            DaggesUtilityPadSlider:SetValue(db.utilityIconPad or DEFAULTS.utilityIconPad)
+
+            UpdateFrameStyles()
+            RefreshBuffs()
         end
     
     elseif cmd == "count" then
@@ -1670,11 +1968,156 @@ SlashCmdList["DAGGE"] = function(msg)
         print("|cff8878cc[Buff Tracker]|r Position reset to center.")
 
 
+    elseif cmd == "reset" then
+        print("|cff8878cc[Dagge's]|r Resetting frame positions to center.")
+        local db = GetCurrentProfile()
+        local frames = {
+            {f=frame, x=0, y=0, pk="point", rpk="relPoint", xk="x", yk="y"},
+            {f=secondaryFrame, x=0, y=-150, pk="secondaryPoint", rpk="secondaryRelPoint", xk="secondaryX", yk="secondaryY"},
+            {f=essentialFrame, x=0, y=50, pk="essentialPoint", rpk="essentialRelPoint", xk="essentialX", yk="essentialY"},
+            {f=utilityFrame, x=0, y=100, pk="utilityPoint", rpk="utilityRelPoint", xk="utilityX", yk="utilityY"},
+            {f=totemFrame, x=0, y=-100, pk="totemPoint", rpk="totemRelPoint", xk="totemX", yk="totemY"},
+        }
+        for _, cfg in ipairs(frames) do
+            cfg.f:ClearAllPoints()
+            cfg.f:SetPoint("CENTER", UIParent, "CENTER", cfg.x, cfg.y)
+            db[cfg.pk] = "CENTER"
+            db[cfg.rpk] = "CENTER"
+            db[cfg.xk] = cfg.x
+            db[cfg.yk] = cfg.y
+        end
+        RefreshBuffs()
+        UpdateTotemBar()
+
+    elseif cmd == "stacks" then
+        -- Stacks diagnostic: probe all available data on active CDM children
+        print("|cff8878cc[Stacks Debug]|r Probing active CDM children for stack data...")
+        
+        -- Check what APIs exist
+        print("  API Check:")
+        print("    C_UnitAuras.GetPlayerAuraBySpellID: " .. (C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID and "EXISTS" or "MISSING"))
+        print("    C_UnitAuras.GetAuraDataByAuraInstanceID: " .. (C_UnitAuras and C_UnitAuras.GetAuraDataByAuraInstanceID and "EXISTS" or "MISSING"))
+        print("    C_UnitAuras.GetBuffDataByIndex: " .. (C_UnitAuras and C_UnitAuras.GetBuffDataByIndex and "EXISTS" or "MISSING"))
+        
+        local viewers = {
+            { name = "Buffs", v = _G.BuffIconCooldownViewer },
+            { name = "Essential", v = _G.EssentialCooldownViewer },
+            { name = "Utility", v = _G.UtilityCooldownViewer },
+        }
+        for _, vInfo in ipairs(viewers) do
+            if not vInfo.v then
+                print("  " .. vInfo.name .. ": viewer not found")
+            else
+                local items = vInfo.v.GetItemFrames and vInfo.v:GetItemFrames() or { vInfo.v:GetChildren() }
+                for i, child in ipairs(items) do
+                    if child.Icon and i <= 5 then
+                        local shown = child:IsShown() and "YES" or "NO"
+                        print(string.format("  %s [%d] (shown=%s):", vInfo.name, i, shown))
+                        
+                        -- cooldownInfo dump
+                        pcall(function()
+                            if child.cooldownInfo then
+                                local ci = child.cooldownInfo
+                                local sid = ci.overrideSpellID or ci.spellID
+                                print(string.format("    cooldownInfo.spellID=%s", tostring(sid)))
+                                print(string.format("    cooldownInfo.applications=%s", tostring(ci.applications)))
+                                print(string.format("    cooldownInfo.charges=%s maxCharges=%s", tostring(ci.charges), tostring(ci.maxCharges)))
+                            else
+                                print("    cooldownInfo: NIL")
+                            end
+                        end)
+                        
+                        -- Try GetPlayerAuraBySpellID
+                        pcall(function()
+                            local sid = child.cooldownInfo and (child.cooldownInfo.overrideSpellID or child.cooldownInfo.spellID)
+                            if sid and C_UnitAuras.GetPlayerAuraBySpellID then
+                                local aura = C_UnitAuras.GetPlayerAuraBySpellID(sid)
+                                if aura then
+                                    print(string.format("    GetPlayerAuraBySpellID: apps=%s name=%s", tostring(aura.applications), tostring(aura.name)))
+                                else
+                                    print("    GetPlayerAuraBySpellID: returned nil")
+                                end
+                            end
+                        end)
+                        
+                        -- Texture matching test (our actual stack detection approach)
+                        pcall(function()
+                            local tex = child.Icon and child.Icon:GetTexture()
+                            print(string.format("    Icon texture: %s", tostring(tex)))
+                            local result = FindStacksByTexture(tex)
+                            print(string.format("    FindStacksByTexture: %s", tostring(result)))
+                        end)
+                        
+                        -- Applications sub-frame
+                        pcall(function()
+                            if child.Applications then
+                                local regions = { child.Applications:GetRegions() }
+                                for _, reg in ipairs(regions) do
+                                    if reg:IsObjectType("FontString") then
+                                        print(string.format("    Apps FontString: text=%s shown=%s", tostring(reg:GetText()), tostring(reg:IsShown())))
+                                    end
+                                end
+                            end
+                        end)
+                    end
+                end
+            end
+        end
+        
+        -- Standalone dump: All player buffs
+        print("|cff8878cc[Stacks Debug]|r Player Buffs (up to 15):")
+        pcall(function()
+            for i = 1, 15 do
+                local aura = C_UnitAuras.GetBuffDataByIndex("player", i)
+                if not aura then break end
+                print(string.format("  [%d] icon=%s apps=%s name=%s spellId=%s",
+                    i, tostring(aura.icon), tostring(aura.applications), tostring(aura.name), tostring(aura.spellId)))
+            end
+        end)
+        print("|cff8878cc[Stacks Debug]|r Done.")
+
     elseif cmd == "debug" then
+        -- CDM Debug
+        print("|cff8878cc[Debug]|r CDM Viewers:")
+        print("  Buffs: " .. (SafeBool(_G.BuffIconCooldownViewer) and "OK" or "NIL"))
+        print("  Essential: " .. (SafeBool(_G.EssentialCooldownViewer) and "OK" or "NIL"))
+        print("  Utility: " .. (SafeBool(_G.UtilityCooldownViewer) and "OK" or "NIL"))
+        
+        print("|cff8878cc[Debug]|r Tracker Frames:")
+        local function DebugF(f, n)
+            if not f then print("  " .. n .. ": MISSING") return end
+            local p, _, rp, px, py = f:GetPoint()
+            print(string.format("  %s: Shown=%s Pos=%s,%s Point=%s", n, f:IsShown() and "YES" or "NO", px or 0, py or 0, p or "nil"))
+        end
+        DebugF(frame, "Primary")
+        DebugF(secondaryFrame, "Secondary")
+        DebugF(essentialFrame, "Essential")
+        DebugF(utilityFrame, "Utility")
+        DebugF(totemFrame, "Totems")
+
+        -- Essential/Utility viewer debug
+        local function DebugViewer(viewerName, viewer)
+            if not viewer then
+                print("|cff8878cc[Debug]|r " .. viewerName .. ": NOT FOUND")
+                return
+            end
+            local items = viewer.GetItemFrames and viewer:GetItemFrames() or { viewer:GetChildren() }
+            print("|cff8878cc[Debug]|r " .. viewerName .. ": " .. #items .. " children")
+            for i, child in ipairs(items) do
+                if i > 3 then print("  ..."); break end
+                local shown = child:IsShown() and "YES" or "NO"
+                local tex = (child.Icon and child.Icon:GetTexture()) or "none"
+                print(string.format("  [%d] Shown=%s Tex=%s", i, shown, tostring(tex)))
+            end
+        end
+        DebugViewer("EssentialCooldownViewer", _G.EssentialCooldownViewer)
+        DebugViewer("UtilityCooldownViewer", _G.UtilityCooldownViewer)
+        DebugViewer("BuffIconCooldownViewer", _G.BuffIconCooldownViewer)
+
         -- Totem Debug
         print("|cff8878cc[Debug]|r Totem Bar Slots:")
         for i=1,4 do
-             local _, name, start, duration, icon = GetTotemInfo(i)
+             local haveTotem, name, start, duration, icon = GetTotemInfo(i)
              local hasTotem = SafeBool(haveTotem) and "YES" or "NO"
              local hasIcon = SafeBool(icon) and "YES" or "NO"
              local hasDur = SafeBool(duration) and "YES" or "NO"
