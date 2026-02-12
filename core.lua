@@ -1233,7 +1233,7 @@ local function CreateConfigFrame()
     if configFrame then return end
     
     local f = CreateFrame("Frame", "DaggesConfigFrame", UIParent, "BackdropTemplate")
-    f:SetSize(300, 320)
+    f:SetSize(320, 500) -- Increased height to fit all settings comfortably
     f:SetPoint("CENTER")
     f:SetFrameStrata("HIGH")
     f:EnableMouse(true)
@@ -1251,25 +1251,75 @@ local function CreateConfigFrame()
 
     -- Title
     local title = f:CreateFontString(nil, "ARTWORK", "GameFontNormalHuge")
-    title:SetPoint("TOP", 0, -16)
+    title:SetPoint("TOP", 0, -18)
     title:SetText("Dagge's Buff Tracker")
 
     -- Close Button
     local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
     close:SetPoint("TOPRIGHT", -8, -8)
 
-    -- ── Helper: Section Header ──
-    local function MakeHeader(text, yOffset)
-        local h = f:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    -- ── Tab System ──
+    local tabs = {}
+    local tabFrames = {}
+
+    local function ShowTab(id)
+        for i, frame in ipairs(tabFrames) do
+            if i == id then frame:Show() else frame:Hide() end
+        end
+        for i, button in ipairs(tabs) do
+            if i == id then 
+                button:SetAlpha(1.0)
+                button:GetFontString():SetTextColor(1, 0.8, 0)
+            else 
+                button:SetAlpha(0.7)
+                button:GetFontString():SetTextColor(1, 1, 1)
+            end
+        end
+    end
+
+    local function CreateTab(id, text)
+        local tab = CreateFrame("Button", nil, f)
+        tab:SetSize(80, 25)
+        tab:SetPoint("TOPLEFT", f, "TOPLEFT", 15 + (id-1) * 85, -45)
+        
+        local bg = tab:CreateTexture(nil, "BACKGROUND")
+        bg:SetAllPoints()
+        bg:SetColorTexture(0.2, 0.2, 0.2, 0.5)
+        
+        local highlight = tab:CreateTexture(nil, "HIGHLIGHT")
+        highlight:SetAllPoints()
+        highlight:SetColorTexture(0.5, 0.5, 0.5, 0.3)
+        
+        tab:SetFontString(tab:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall"))
+        tab:SetText(text)
+        
+        tab:SetScript("OnClick", function() ShowTab(id) end)
+        
+        tabs[id] = tab
+        
+        local content = CreateFrame("Frame", nil, f)
+        content:SetPoint("TOPLEFT", 0, -75)
+        content:SetPoint("BOTTOMRIGHT", 0, 0)
+        tabFrames[id] = content
+        
+        return content
+    end
+
+    local generalTab = CreateTab(1, "General")
+    local buffsTab   = CreateTab(2, "Buffs")
+    local totemsTab  = CreateTab(3, "Totems")
+
+    -- ── Helpers (Updated for parenting) ──
+    local function MakeHeader(parent, text, yOffset)
+        local h = parent:CreateFontString(nil, "ARTWORK", "GameFontNormal")
         h:SetPoint("TOPLEFT", 24, yOffset)
         h:SetTextColor(0.9, 0.8, 0.5)
         h:SetText(text)
         return h
     end
 
-    -- ── Helper: Checkbox ──
-    local function MakeCheck(name, label, yOffset, xOffset, dbKey, defaultVal, callback)
-        local cb = CreateFrame("CheckButton", name, f, "UICheckButtonTemplate")
+    local function MakeCheck(parent, name, label, yOffset, xOffset, dbKey, defaultVal, callback)
+        local cb = CreateFrame("CheckButton", name, parent, "UICheckButtonTemplate")
         cb:SetPoint("TOPLEFT", xOffset, yOffset)
         _G[cb:GetName() .. "Text"]:SetText(label)
         local db = GetCurrentProfile()
@@ -1283,9 +1333,8 @@ local function CreateConfigFrame()
         return cb
     end
 
-    -- ── Helper: Slider ──
-    local function MakeSlider(name, label, yOffset, min, max, dbKey, defaultVal, callback)
-        local sl = CreateFrame("Slider", name, f, "OptionsSliderTemplate")
+    local function MakeSlider(parent, name, label, yOffset, min, max, dbKey, defaultVal, callback)
+        local sl = CreateFrame("Slider", name, parent, "OptionsSliderTemplate")
         sl:SetPoint("TOPLEFT", 24, yOffset)
         sl:SetWidth(250)
         sl:SetMinMaxValues(min, max)
@@ -1305,20 +1354,19 @@ local function CreateConfigFrame()
         return sl
     end
 
-    local y = -50  -- starting Y below title
-
     -- ════════════════════════════════════════════════════════════════
-    -- DROPDOWN / PROFILE UI
+    -- TAB 1: GENERAL (Profiles & Global Settings)
     -- ════════════════════════════════════════════════════════════════
-    local profileLabel = f:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    local y = -10
+    
+    local profileLabel = generalTab:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     profileLabel:SetPoint("TOPLEFT", 24, y)
     profileLabel:SetText("Profile:")
     
-    local ddown = CreateFrame("Frame", "DaggesProfileDropdown", f, "UIDropDownMenuTemplate")
+    local ddown = CreateFrame("Frame", "DaggesProfileDropdown", generalTab, "UIDropDownMenuTemplate")
     ddown:SetPoint("TOPLEFT", 70, y + 2)
     UIDropDownMenu_SetWidth(ddown, 120)
     
-    -- Function to refresh the dropdown text
     local function UpdateDropdownText()
         local charKey = GetCharKey()
         local pName = DaggesAddonDB.charProfiles[charKey] or "Default"
@@ -1329,211 +1377,143 @@ local function CreateConfigFrame()
         local info = UIDropDownMenu_CreateInfo()
         local charKey = GetCharKey()
         local currentCharProfile = DaggesAddonDB.charProfiles[charKey] or "Default"
-        
-        -- Sort names: Default first, then alphabetical
         local names = {}
-        for name in pairs(DaggesAddonDB.profiles) do
-            table.insert(names, name)
-        end
+        for name in pairs(DaggesAddonDB.profiles) do table.insert(names, name) end
         table.sort(names, function(a, b)
             if a == "Default" then return true end
             if b == "Default" then return false end
             return a < b
         end)
-        
         for _, name in ipairs(names) do
             info.text = name
             info.checked = (name == currentCharProfile)
-            info.func = function(self)
-                SetProfile(self:GetText())
-                UpdateDropdownText()
-            end
+            info.func = function(self) SetProfile(self:GetText()); UpdateDropdownText() end
             UIDropDownMenu_AddButton(info)
         end
     end)
     UpdateDropdownText()
     
-    -- Copy From Dropdown
-    y = y - 30
-    local copyLabel = f:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-    copyLabel:SetPoint("TOPLEFT", 24, y)
-    copyLabel:SetText("Copy From:")
+    -- New/Delete Buttons
+    local newBtn = CreateFrame("Button", nil, generalTab, "GameMenuButtonTemplate")
+    newBtn:SetSize(20, 20); newBtn:SetPoint("LEFT", ddown, "RIGHT", -10, 2); newBtn:SetText("+")
+    newBtn:SetScript("OnClick", function()
+        StaticPopupDialogs["DAGGES_NEW_PROFILE"] = {
+            text = "Enter new profile name:", button1 = "Create", button2 = "Cancel", hasEditBox = true,
+            OnAccept = function(self) CopyProfile(self.EditBox:GetText()); UpdateDropdownText() end,
+            timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
+        }
+        StaticPopup_Show("DAGGES_NEW_PROFILE")
+    end)
     
-    local copyDown = CreateFrame("Frame", "DaggesCopyFromDropdown", f, "UIDropDownMenuTemplate")
-    copyDown:SetPoint("TOPLEFT", 70, y + 2)
-    UIDropDownMenu_SetWidth(copyDown, 120)
-    UIDropDownMenu_SetText(copyDown, "Select Source...")
+    local delBtn = CreateFrame("Button", nil, generalTab, "GameMenuButtonTemplate")
+    delBtn:SetSize(20, 20); delBtn:SetPoint("LEFT", newBtn, "RIGHT", 5, 0); delBtn:SetText("-")
+    delBtn:SetScript("OnClick", function()
+        local charKey = GetCharKey()
+        local pName = DaggesAddonDB.charProfiles[charKey] or "Default"
+        if pName == "Default" then print("Cannot delete Default profile."); return end
+        DeleteProfile(pName); UpdateDropdownText()
+    end)
+
+    y = y - 35
+    local copyLabel = generalTab:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    copyLabel:SetPoint("TOPLEFT", 24, y); copyLabel:SetText("Copy From:")
     
+    local copyDown = CreateFrame("Frame", "DaggesCopyFromDropdown", generalTab, "UIDropDownMenuTemplate")
+    copyDown:SetPoint("TOPLEFT", 70, y + 2); UIDropDownMenu_SetWidth(copyDown, 120); UIDropDownMenu_SetText(copyDown, "Select...")
     UIDropDownMenu_Initialize(copyDown, function(self, level, menuList)
         local info = UIDropDownMenu_CreateInfo()
         local names = {}
-        for name in pairs(DaggesAddonDB.profiles) do
-            table.insert(names, name)
-        end
+        for name in pairs(DaggesAddonDB.profiles) do table.insert(names, name) end
         table.sort(names, function(a, b)
             if a == "Default" then return true end
             if b == "Default" then return false end
             return a < b
         end)
-        
         for _, name in ipairs(names) do
-            info.text = name
-            info.checked = false
+            info.text = name; info.checked = false
             info.func = function(self)
-                local targetName = self:GetText()
+                local src = self:GetText()
                 StaticPopupDialogs["DAGGES_COPY_CONFIRM"] = {
-                    text = "Are you sure you want to overwrite your current profile with settings from '" .. targetName .. "'?",
-                    button1 = "Yes",
-                    button2 = "No",
-                    OnAccept = function()
-                        CopyFromProfile(targetName)
-                        print("|cff8878cc[Buff Tracker]|r Settings copied from " .. targetName)
-                    end,
-                    timeout = 0,
-                    whileDead = true,
-                    hideOnEscape = true,
+                    text = "Copy settings from '" .. src .. "' to current?", button1 = "Yes", button2 = "No",
+                    OnAccept = function() CopyFromProfile(src) end, timeout = 0, whileDead = true, hideOnEscape = true,
                 }
                 StaticPopup_Show("DAGGES_COPY_CONFIRM")
-                UIDropDownMenu_SetText(copyDown, "Select Source...")
             end
             UIDropDownMenu_AddButton(info)
         end
     end)
-    
-    -- New Profile
-    local newBtn = CreateFrame("Button", nil, f, "GameMenuButtonTemplate")
-    newBtn:SetSize(20, 20)
-    newBtn:SetPoint("LEFT", ddown, "RIGHT", -10, 2)
-    newBtn:SetText("+")
-    newBtn:SetScript("OnClick", function()
-        StaticPopupDialogs["DAGGES_NEW_PROFILE"] = {
-            text = "Enter new profile name:",
-            button1 = "Create",
-            button2 = "Cancel",
-            hasEditBox = true,
-            OnAccept = function(self)
-                local text = self.EditBox:GetText()
-                CopyProfile(text)
-                UpdateDropdownText()
-            end,
-            timeout = 0,
-            whileDead = true,
-            hideOnEscape = true,
-            preferredIndex = 3,
-        }
-        StaticPopup_Show("DAGGES_NEW_PROFILE")
+
+    y = y - 45
+    MakeCheck(generalTab, "DaggesLockCheck", "Lock Frames", y, 20, "locked", false, function()
+        print("|cff8878cc[Buff Tracker]|r Frames " .. (GetCurrentProfile().locked and "Locked" or "Unlocked"))
     end)
+    MakeCheck(generalTab, "DaggesHideBGCheck", "Hide Background", y, 160, "hideBackground", false, UpdateFrameStyles)
     
-    -- Delete Profile
-    local delBtn = CreateFrame("Button", nil, f, "GameMenuButtonTemplate")
-    delBtn:SetSize(20, 20)
-    delBtn:SetPoint("LEFT", newBtn, "RIGHT", 5, 0)
-    delBtn:SetText("-")
-    delBtn:SetScript("OnClick", function()
-        local charKey = GetCharKey()
-        local pName = DaggesAddonDB.charProfiles[charKey] or "Default"
-        if pName == "Default" then
-            print("Cannot delete Default profile.")
-            return
-        end
-        DeleteProfile(pName)
-        UpdateDropdownText()
+    y = y - 30
+    MakeCheck(generalTab, "DaggesHideCDMCheck", "Hide Blizzard CDM", y, 20, "hideBlizzardCDM", true, function()
+        if viewer and viewer.SetAlpha then viewer:SetAlpha(GetCurrentProfile().hideBlizzardCDM and 0 or 1) end
     end)
 
     y = y - 40
+    local resetBtn = CreateFrame("Button", nil, generalTab, "GameMenuButtonTemplate")
+    resetBtn:SetPoint("TOPLEFT", 20, y); resetBtn:SetSize(130, 25); resetBtn:SetText("Reset Positions")
+    resetBtn:SetScript("OnClick", function() SlashCmdList["DAGGE"]("reset") end)
 
     -- ════════════════════════════════════════════════════════════════
-    -- GENERAL
+    -- TAB 2: BUFFS (Primary & Secondary)
     -- ════════════════════════════════════════════════════════════════
-    MakeHeader("-- General --", y)
-    y = y - 20
-    MakeCheck("DaggesLockCheck", "Lock Frames", y, 20, "locked", false, function()
-        if GetCurrentProfile().locked then
-            print("|cff8878cc[Buff Tracker]|r Frames Locked.")
-        else
-            print("|cff8878cc[Buff Tracker]|r Frames Unlocked.")
-        end
-    end)
-    MakeCheck("DaggesHideBGCheck", "Hide Background", y, 160, "hideBackground", false, UpdateFrameStyles)
-    y = y - 30
-    MakeCheck("DaggesHideCDMCheck", "Hide Blizzard CDM", y, 20, "hideBlizzardCDM", true, function()
-        if viewer then
-            local db = GetCurrentProfile()
-            if db.hideBlizzardCDM then
-                if viewer.SetAlpha then viewer:SetAlpha(0) end
-            else
-                if viewer.SetAlpha then viewer:SetAlpha(1) end
-            end
-        end
-    end)
-    y = y - 50
-
-    -- ════════════════════════════════════════════════════════════════
-    -- PRIMARY BUFFS
-    -- ════════════════════════════════════════════════════════════════
-    MakeHeader("-- Primary Buffs --", y)
-    y = y - 20
-    MakeCheck("DaggesShowBuffsCheck", "Show", y, 20, "showBuffs", true, RefreshBuffs)
-    y = y - 30
-    MakeSlider("DaggesBuffSlider", "Count", y, 0, 20, "buffCount", DEFAULTS.buffCount, RefreshBuffs)
-    y = y - 50
-    MakeSlider("DaggesPrimarySizeSlider", "Size", y, 20, 60, "primaryIconSize", DEFAULTS.primaryIconSize, function() ResizeAllIcons() RefreshBuffs() end)
-    y = y - 50
-    MakeSlider("DaggesPrimaryPadSlider", "Spacing", y, 0, 15, "primaryIconPad", DEFAULTS.primaryIconPad, function() ResizeAllIcons() RefreshBuffs() end)
-    y = y - 60
-
-    -- ════════════════════════════════════════════════════════════════
-    -- SECONDARY BUFFS
-    -- ════════════════════════════════════════════════════════════════
-    MakeHeader("-- Secondary Buffs --", y)
-    y = y - 20
-    MakeCheck("DaggesShowSecondaryCheck", "Show", y, 20, "showSecondaryBuffs", true, RefreshBuffs)
-    y = y - 30
-    MakeSlider("DaggesSecondarySlider", "Count", y, 1, 20, "secondaryBuffCount", DEFAULTS.secondaryBuffCount, RefreshBuffs)
-    y = y - 50
-    MakeSlider("DaggesSecondarySizeSlider", "Size", y, 20, 60, "secondaryIconSize", DEFAULTS.secondaryIconSize, function() ResizeAllIcons() RefreshBuffs() end)
-    y = y - 50
-    MakeSlider("DaggesSecondaryPadSlider", "Spacing", y, 0, 15, "secondaryIconPad", DEFAULTS.secondaryIconPad, function() ResizeAllIcons() RefreshBuffs() end)
-    y = y - 60
-
-    -- ════════════════════════════════════════════════════════════════
-    -- TOTEMS
-    -- ════════════════════════════════════════════════════════════════
-    MakeHeader("-- Totems --", y)
-    y = y - 20
-    MakeCheck("DaggesShowTotemsCheck", "Show", y, 20, "showTotems", true, UpdateTotemBar)
-    y = y - 30
-    MakeSlider("DaggesTotemSlider", "Count", y, 1, 4, "totemCount", 4, UpdateTotemBar)
-    y = y - 50
-    MakeSlider("DaggesTotemSizeSlider", "Size", y, 20, 60, "totemIconSize", DEFAULTS.totemIconSize, function() ResizeAllIcons() UpdateTotemBar() end)
-    y = y - 50
-    MakeSlider("DaggesTotemPadSlider", "Spacing", y, 0, 15, "totemIconPad", DEFAULTS.totemIconPad, function() ResizeAllIcons() UpdateTotemBar() end)
-    y = y - 45
-
-    -- Reset Button
-    local resetBtn = CreateFrame("Button", nil, f, "GameMenuButtonTemplate")
-    resetBtn:SetPoint("TOPLEFT", 20, y)
-    resetBtn:SetSize(120, 25)
-    resetBtn:SetText("Reset Positions")
-    resetBtn:SetScript("OnClick", function()
-        SlashCmdList["DAGGE"]("reset")
-    end)
+    y = -10
+    MakeHeader(buffsTab, "-- Primary Buffs --", y)
+    y = y - 25
+    MakeCheck(buffsTab, "DaggesShowBuffsCheck", "Show Primary", y, 20, "showBuffs", true, RefreshBuffs)
+    
     y = y - 35
+    MakeSlider(buffsTab, "DaggesBuffSlider", "Count", y, 0, 20, "buffCount", DEFAULTS.buffCount, RefreshBuffs)
+    y = y - 45
+    MakeSlider(buffsTab, "DaggesPrimarySizeSlider", "Size", y, 20, 60, "primaryIconSize", DEFAULTS.primaryIconSize, function() ResizeAllIcons(); RefreshBuffs() end)
+    y = y - 45
+    MakeSlider(buffsTab, "DaggesPrimaryPadSlider", "Spacing", y, 0, 15, "primaryIconPad", DEFAULTS.primaryIconPad, function() ResizeAllIcons(); RefreshBuffs() end)
+    
+    y = y - 55
+    MakeHeader(buffsTab, "-- Secondary Buffs --", y)
+    y = y - 25
+    MakeCheck(buffsTab, "DaggesShowSecondaryCheck", "Show Secondary", y, 20, "showSecondaryBuffs", true, RefreshBuffs)
+    
+    y = y - 35
+    MakeSlider(buffsTab, "DaggesSecondarySlider", "Count", y, 1, 25, "secondaryBuffCount", 10, RefreshBuffs)
+    y = y - 45
+    MakeSlider(buffsTab, "DaggesSecondarySizeSlider", "Size", y, 20, 60, "secondaryIconSize", DEFAULTS.secondaryIconSize, function() ResizeAllIcons(); RefreshBuffs() end)
+    y = y - 45
+    MakeSlider(buffsTab, "DaggesSecondaryPadSlider", "Spacing", y, 0, 15, "secondaryIconPad", DEFAULTS.secondaryIconPad, function() ResizeAllIcons(); RefreshBuffs() end)
+    
+    -- ════════════════════════════════════════════════════════════════
+    -- TAB 3: TOTEMS
+    -- ════════════════════════════════════════════════════════════════
+    y = -10
+    MakeHeader(totemsTab, "-- Totem Settings --", y)
+    y = y - 25
+    MakeCheck(totemsTab, "DaggesShowTotemsCheck", "Show Totems", y, 20, "showTotems", true, UpdateTotemBar)
+    
+    y = y - 35
+    MakeSlider(totemsTab, "DaggesTotemSlider", "Max Totems", y, 1, 4, "totemCount", 4, UpdateTotemBar)
+    y = y - 45
+    MakeSlider(totemsTab, "DaggesTotemSizeSlider", "Size", y, 20, 60, "totemIconSize", DEFAULTS.totemIconSize, function() ResizeAllIcons(); UpdateTotemBar() end)
+    y = y - 45
+    MakeSlider(totemsTab, "DaggesTotemPadSlider", "Spacing", y, 0, 15, "totemIconPad", DEFAULTS.totemIconPad, function() ResizeAllIcons(); UpdateTotemBar() end)
 
-    f:SetSize(300, math.abs(y) + 20)
+    -- Default Tab
+    ShowTab(1)
+
     configFrame = f
     tinsert(UISpecialFrames, "DaggesConfigFrame")
     
     f:HookScript("OnShow", function()
         if secondaryFrame.centerLine then secondaryFrame.centerLine:Show() end
-        UpdateFrameStyles() UpdateTotemBar() RefreshBuffs()
+        UpdateFrameStyles(); UpdateTotemBar(); RefreshBuffs()
     end)
     f:HookScript("OnHide", function()
         if secondaryFrame.centerLine then secondaryFrame.centerLine:Hide() end
-        -- Force update styles with 'forceClosed' flag to avoid race conditions
-        UpdateFrameStyles(true) 
-        UpdateTotemBar(true) 
-        RefreshBuffs(true)
+        UpdateFrameStyles(true); UpdateTotemBar(true); RefreshBuffs(true)
     end)
     
     f:Hide()
